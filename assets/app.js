@@ -399,9 +399,10 @@ function editMenuLine(id) {
 function scrPlus() {
   const co = commOuverts().length;
   const menu = [
+    { s: 'assistant', ic: I.chat, t: 'Assistant IA', d: 'Pose une question sur tes données' },
     { s: 'communication', ic: I.chat, t: 'Salle ↔ Cuisine', d: 'Messages, signalements & 86', badge: co },
-    { s: 'planning', ic: I.calendar, t: 'Planning équipe', d: 'Services des 7 prochains jours' },
-    { s: 'fournisseurs', ic: I.truck, t: 'Fournisseurs', d: `${DB.fournisseurs.length} contact(s)` },
+    { s: 'planning', ic: I.calendar, t: 'Planning équipe', d: 'Grille, dispos & génération' },
+    { s: 'fournisseurs', ic: I.truck, t: 'Fournisseurs', d: `${DB.fournisseurs.length} contact(s) · commandes IA` },
     { s: 'checklists', ic: I.check, t: 'Checklists', d: 'Ouverture & fermeture' },
     { s: 'notes', ic: I.note, t: 'Notes & consignes', d: 'Cahier de liaison de l\'équipe' },
   ];
@@ -673,7 +674,8 @@ function setBesoinActif(svc, val) { DB.besoins[svc].actif = val; save(); render(
 
 /* ---------- Fournisseurs (#7) ---------- */
 function scrFournisseurs() {
-  return `${searchBar('Rechercher un fournisseur…')}
+  return `<button class="btn" style="margin-bottom:12px" onclick="aiOrders()">🛒 Préparer les commandes (IA)</button>
+    ${searchBar('Rechercher un fournisseur…')}
     <div class="grid-list" id="list">
       ${DB.fournisseurs.map(f => `
         <div class="tile" data-search="${esc(f.nom + ' ' + f.categorie)}">
@@ -812,12 +814,14 @@ function scrScan() {
       <strong>Scanner le ticket du soir</strong>
       <p class="muted" style="font-size:13.5px;margin:6px 0 0">Prends en photo le ticket récapitulatif des ventes. L'app lit les articles et te propose la mise à jour des stocks — tu valides avant que quoi que ce soit ne change.</p>
     </div>
-    <label class="btn" style="display:block;text-align:center;cursor:pointer">📷 Prendre le ticket en photo
+    <label class="btn" style="display:block;text-align:center;cursor:pointer">🤖 Photo → lecture par IA <span style="opacity:.8;font-weight:500">(plus fiable)</span>
+      <input type="file" accept="image/*" capture="environment" hidden onchange="handleScanFileAI(this)"></label>
+    <label class="btn btn-soft" style="display:block;text-align:center;margin-top:10px;cursor:pointer">📷 Photo → lecture sur l'appareil
       <input type="file" accept="image/*" capture="environment" hidden onchange="handleScanFile(this)"></label>
-    <label class="btn btn-soft" style="display:block;text-align:center;margin-top:10px;cursor:pointer">🖼️ Choisir une image
+    <label class="btn btn-soft" style="display:block;text-align:center;margin-top:10px;cursor:pointer">🖼️ Choisir une image (appareil)
       <input type="file" accept="image/*" hidden onchange="handleScanFile(this)"></label>
     <button class="btn btn-outline" style="margin-top:10px" onclick="scanManual()">✍️ Saisir le ticket à la main</button>
-    <p class="muted" style="font-size:12px;text-align:center;margin-top:18px">🔒 La photo est analysée sur ton téléphone — rien n'est envoyé sur internet.</p>`;
+    <p class="muted" style="font-size:12px;text-align:center;margin-top:18px">🤖 = meilleure lecture (nécessite la connexion). 📷/🖼️ = lecture sur le téléphone, hors-ligne.</p>`;
 }
 
 function handleScanFile(input) { const f = input.files && input.files[0]; if (f) startOcr(f); }
@@ -937,6 +941,111 @@ function applyScan() {
 }
 
 /* =========================================================================
+   IA — Assistant (questions), Commandes fournisseurs, Scan ticket par IA
+   ========================================================================= */
+
+/* --- Assistant questions --- */
+let assistantLog = [];
+function assistantData() {
+  const t = todayISO();
+  return {
+    date: t,
+    stocks: DB.stocks.map(s => ({ nom: s.nom, categorie: s.categorie, quantite: s.quantite, unite: s.unite, seuil: s.seuil, fournisseur: fournisseurNom(s.fournisseurId) })),
+    cave: DB.vins.map(v => ({ nom: v.nom, type: v.type, millesime: v.millesime, quantite: v.quantite, seuil: v.seuil, emplacement: v.emplacement, prixVente: v.prixVente })),
+    fournisseurs: DB.fournisseurs.map(f => ({ nom: f.nom, categorie: f.categorie, telephone: f.telephone, email: f.email, delai: f.delai })),
+    alertes: [...stockBas().map(s => `${s.nom} (${s.quantite} ${s.unite}/seuil ${s.seuil})`), ...vinBas().map(v => `${v.nom} (${v.quantite} bt/seuil ${v.seuil})`)],
+    menuJour: DB.menus.filter(m => m.date === t).map(m => ({ section: m.categorie, plat: m.nom, prix: m.prix })),
+    planningJour: DB.planning.filter(p => p.date === t).map(p => ({ nom: p.nom, service: p.service, debut: p.debut, fin: p.fin })),
+    notes: DB.notes.map(n => n.texte),
+    checklists: {
+      ouverture: DB.checklists.ouverture.filter(x => x.fait).length + '/' + DB.checklists.ouverture.length,
+      fermeture: DB.checklists.fermeture.filter(x => x.fait).length + '/' + DB.checklists.fermeture.length,
+    },
+  };
+}
+function scrAssistant() {
+  const sugg = ['Qu\'est-ce qui est à commander ?', 'Combien de bouteilles en cave ?', 'Qui travaille aujourd\'hui ?', 'Résume les consignes'];
+  return `
+    <div class="grid-list" id="asgLog" style="min-height:120px">
+      ${assistantLog.length
+        ? assistantLog.map(m => `<div class="${m.role === 'user' ? 'asg-q' : 'asg-a'}">${m.role === 'ai' ? '🤖 ' : ''}${esc(m.text).replace(/\n/g, '<br>')}</div>`).join('')
+        : `<div class="empty"><div class="ico">💬</div><strong style="display:block;color:var(--ink)">Pose ta question</strong><div style="margin-top:4px">Sur tes stocks, ta cave, le planning, les consignes…</div></div>`}
+    </div>
+    <div class="tag-row" style="margin:12px 0">${sugg.map(s => `<button class="pill p-muted" style="border:none;cursor:pointer" onclick="askAssistant(this.textContent)">${esc(s)}</button>`).join('')}</div>
+    <div style="display:flex;gap:8px">
+      <input id="asgInput" placeholder="Écris ta question…" style="flex:1;padding:12px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2);color:var(--ink);font-size:15px" onkeydown="if(event.key==='Enter')askAssistant()">
+      <button class="btn" style="width:auto" onclick="askAssistant()">Envoyer</button>
+    </div>`;
+}
+async function askAssistant(preset) {
+  const inp = $('#asgInput');
+  const q = (preset || (inp && inp.value) || '').trim();
+  if (!q) return;
+  if (!window.Cloud || !window.Cloud.isConnected()) return toast('Connecte-toi avec le code pour l\'assistant', 'err');
+  assistantLog.push({ role: 'user', text: q });
+  assistantLog.push({ role: 'ai', text: '…' });
+  render();
+  const { data, error } = await window.Cloud.ai({ task: 'assistant', question: q, data: assistantData() });
+  assistantLog.pop();
+  if (error || (data && data.error)) assistantLog.push({ role: 'ai', text: 'Désolé, je n\'ai pas pu répondre (' + ((error && error.message) || (data && data.error) || '') + ').' });
+  else assistantLog.push({ role: 'ai', text: (data && data.answer) || '—' });
+  render();
+  const log = $('#asgLog'); if (log) log.scrollTop = log.scrollHeight;
+}
+
+/* --- Commandes fournisseurs auto --- */
+async function aiOrders() {
+  if (!window.Cloud || !window.Cloud.isConnected()) return toast('Connecte-toi avec le code pour l\'IA', 'err');
+  const bas = stockBas();
+  if (!bas.length) return toast('Aucun produit sous le seuil 👌', 'ok');
+  const alertes = bas.map(s => ({ produit: s.nom, quantite: s.quantite, unite: s.unite, seuil: s.seuil, fournisseur: fournisseurNom(s.fournisseurId) }));
+  const fournisseurs = DB.fournisseurs.map(f => ({ nom: f.nom, email: f.email, categorie: f.categorie }));
+  toast('L\'IA prépare les commandes…');
+  const { data, error } = await window.Cloud.ai({ task: 'order', alertes, fournisseurs });
+  if (error || (data && data.error)) return toast('IA indisponible : ' + ((error && error.message) || (data && data.error) || ''), 'err');
+  const orders = (data && data.orders) || [];
+  if (!orders.length) return toast('Aucune commande proposée', 'err');
+  window.__orders = orders;
+  const body = orders.map((o, i) => `
+    <div class="card" style="margin-bottom:10px">
+      <strong>${esc(o.fournisseur || 'Fournisseur')}</strong>
+      <div class="grid-list" style="margin:8px 0;gap:4px">${(o.lignes || []).map(l => `<div class="spread" style="font-size:14px"><span>${esc(l.produit)}</span><span class="pill p-muted">${esc(l.quantite)}</span></div>`).join('')}</div>
+      ${o.message ? `<div class="li-meta" style="white-space:pre-wrap;background:var(--surface-2);padding:9px;border-radius:9px">${esc(o.message)}</div>` : ''}
+      <div style="display:flex;gap:8px;margin-top:8px">
+        <button class="btn-sm btn-soft" onclick="copyOrder(${i})">Copier</button>
+        ${o.email ? `<a class="btn-sm btn" style="text-decoration:none;text-align:center;line-height:1.9" href="mailto:${esc(o.email)}?subject=${encodeURIComponent('Commande — ' + (o.fournisseur || ''))}&body=${encodeURIComponent(o.message || '')}">Envoyer par email</a>` : ''}
+      </div>
+    </div>`).join('');
+  sheet('Commandes proposées', body, null);
+}
+function copyOrder(i) {
+  const o = (window.__orders || [])[i]; if (!o) return;
+  const txt = o.message || (o.lignes || []).map(l => l.quantite + ' — ' + l.produit).join('\n');
+  if (navigator.clipboard) navigator.clipboard.writeText(txt);
+  toast('Commande copiée', 'ok');
+}
+
+/* --- Scan ticket par IA (vision) --- */
+function handleScanFileAI(input) { const f = input.files && input.files[0]; if (f) startOcrAI(f); }
+function fileToDataURL(file) { return new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = rej; r.readAsDataURL(file); }); }
+async function startOcrAI(file) {
+  if (!window.Cloud || !window.Cloud.isConnected()) { toast('Non connecté — lecture locale', ''); return startOcr(file); }
+  scan.phase = 'reading'; scan.progress = 50; render();
+  try {
+    const image = await fileToDataURL(file);
+    const { data, error } = await window.Cloud.ai({ task: 'ticket', image });
+    if (error || (data && data.error)) throw new Error((error && error.message) || (data && data.error));
+    const arts = (data && data.articles) || [];
+    scan.lines = buildReview(arts.map(a => ({ name: a.nom, qty: Number(a.qty) || 1 })));
+    scan.phase = 'review'; render();
+    if (!scan.lines.length) toast('Aucun article détecté — réessaie ou saisis à la main', 'err');
+  } catch (e) {
+    toast('Lecture IA indisponible : ' + (e.message || ''), 'err');
+    scanManual();
+  }
+}
+
+/* =========================================================================
    COMPOSANTS PARTAGÉS
    ========================================================================= */
 const fld = (label, input) => `<div class="field"><label>${esc(label)}</label>${input}</div>`;
@@ -958,17 +1067,19 @@ function delItem(collection, id) {
 let sheetConfirm = null;
 function sheet(title, body, onConfirm) {
   sheetConfirm = onConfirm;
+  const foot = onConfirm
+    ? `<button class="btn btn-outline" onclick="closeSheet()">Annuler</button><button class="btn" onclick="submitSheet()">Enregistrer</button>`
+    : `<button class="btn" onclick="closeSheet()">Fermer</button>`;
   $('#modalRoot').innerHTML = `
     <div class="sheet-overlay" onclick="if(event.target===this)closeSheet()">
       <div class="sheet" role="dialog" aria-modal="true">
         <div class="sheet-grip"></div>
         <div class="sheet-head"><h2>${esc(title)}</h2><button class="icon-btn" onclick="closeSheet()">✕</button></div>
         <div class="sheet-body">${body}</div>
-        <div class="sheet-foot"><button class="btn btn-outline" onclick="closeSheet()">Annuler</button><button class="btn" onclick="submitSheet()">Enregistrer</button></div>
+        <div class="sheet-foot">${foot}</div>
       </div>
     </div>`;
-  const first = $('#modalRoot input, #modalRoot textarea, #modalRoot select');
-  if (first) setTimeout(() => first.focus(), 120);
+  if (onConfirm) { const first = $('#modalRoot input, #modalRoot textarea, #modalRoot select'); if (first) setTimeout(() => first.focus(), 120); }
 }
 function submitSheet() { if (sheetConfirm && sheetConfirm() === false) return; closeSheet(); }
 function closeSheet() { $('#modalRoot').innerHTML = ''; sheetConfirm = null; }
@@ -1019,6 +1130,7 @@ const SCREENS = {
   fournisseurs:  { title: 'Fournisseurs', tab: 'plus', back: 'plus', render: scrFournisseurs, fab: 'editFournisseur' },
   checklists:    { title: 'Checklists', tab: 'plus', back: 'plus', render: scrChecklists },
   notes:         { title: 'Notes & consignes', tab: 'plus', back: 'plus', render: scrNotes, fab: 'editNote' },
+  assistant:     { title: 'Assistant IA', tab: 'plus', back: 'plus', render: scrAssistant },
 };
 const TABS = [
   { id: 'accueil', label: 'Accueil', icon: I.home },
@@ -1125,7 +1237,8 @@ Object.assign(window, {
   cellAdd, cellSvcChange, editStaff, setBesoin, setBesoinActif, planningAI,
   addCheck, delCheck, resetCheck, editNote, pinNote, delItem, filterList,
   exportData, toggleTheme, closeSheet, submitSheet, $,
-  openScan, resetScan, handleScanFile, scanManual, analyzeManual,
+  openScan, resetScan, handleScanFile, handleScanFileAI, scanManual, analyzeManual,
   setScanQty, setScanTarget, removeScanLine, applyScan,
+  askAssistant, aiOrders, copyOrder,
   cloudPinLogin, gateSkip, gateShow, cloudLogout,
 });

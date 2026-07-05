@@ -90,6 +90,10 @@
     if (!client || !session) return { error: { message: 'Connecte-toi avec le code pour utiliser l\'IA' } };
     return await client.functions.invoke('plan-ai', { body: payload });
   }
+  async function ai(payload) {
+    if (!client || !session) return { error: { message: 'Connecte-toi avec le code pour utiliser l\'IA' } };
+    return await client.functions.invoke('ai', { body: payload });
+  }
 
   function pushUI() {
     if (window.__jero && window.__jero.onCloudState) {
@@ -104,7 +108,7 @@
   // API exposée à app.js
   window.Cloud = {
     onSave(state) { if (!session) return; clearTimeout(pushTimer); pushTimer = setTimeout(() => push(state), 400); },
-    signIn, verifyCode, signInWithPin, signOut, aiPlan,
+    signIn, verifyCode, signInWithPin, signOut, aiPlan, ai,
     isConnected: () => !!session,
   };
 

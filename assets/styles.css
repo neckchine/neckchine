@@ -379,6 +379,10 @@ button.row:active { background: var(--surface-2); }
 .gate-pin:focus { outline: none; border-color: var(--wine); }
 .gate-skip { display: block; width: 100%; margin-top: 12px; background: none; border: none; color: var(--muted); font-size: 13px; cursor: pointer; }
 
+/* ---------- Assistant IA (chat) ---------- */
+.asg-q { align-self: flex-end; background: var(--wine); color: #fff; padding: 10px 13px; border-radius: 15px 15px 4px 15px; max-width: 85%; font-size: 14.5px; line-height: 1.4; }
+.asg-a { align-self: flex-start; background: var(--surface); border: 1px solid var(--line); color: var(--ink); padding: 10px 13px; border-radius: 15px 15px 15px 4px; max-width: 92%; font-size: 14.5px; line-height: 1.45; }
+
 /* ---------- Grille planning (style Skello) ---------- */
 .pg-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); box-shadow: var(--shadow-sm); -webkit-overflow-scrolling: touch; }
 .pg { border-collapse: collapse; width: max-content; min-width: 100%; }
