@@ -211,6 +211,7 @@ function scrStocks() {
   const bas = stockBas();
   const rows = DB.stocks.slice().sort((a, b) => (b.quantite <= b.seuil) - (a.quantite <= a.seuil) || a.nom.localeCompare(b.nom));
   return `
+    <button class="btn" style="margin-bottom:12px" onclick="openScan()">📷 Scanner le ticket du soir</button>
     ${bas.length ? `<div class="card" style="border-left:3px solid var(--red);margin-bottom:12px"><strong>${bas.length} produit(s) à commander</strong><div class="muted" style="font-size:13px">${bas.map(s => esc(s.nom)).join(', ')}</div></div>` : ''}
     ${searchBar('Rechercher un produit…')}
     <div class="rows" id="list">
@@ -556,6 +557,179 @@ function editNote(id) {
 function pinNote(id) { const n = DB.notes.find(x => x.id === id); if (n) { n.epingle = !n.epingle; save(); render(); } }
 
 /* =========================================================================
+   SCANNER LE TICKET (#5/#6) — lecture sur l'appareil, gratuite (Tesseract.js)
+   La photo ne quitte pas le téléphone. Écran de validation avant d'appliquer.
+   ========================================================================= */
+let scan = { phase: 'idle', progress: 0, lines: [] };
+let tesseractPromise = null;
+
+function loadTesseract() {
+  if (window.Tesseract) return Promise.resolve(window.Tesseract);
+  if (tesseractPromise) return tesseractPromise;
+  tesseractPromise = new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = 'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js';
+    s.onload = () => window.Tesseract ? resolve(window.Tesseract) : reject(new Error('indispo'));
+    s.onerror = () => reject(new Error('reseau'));
+    document.head.appendChild(s);
+    setTimeout(() => { if (!window.Tesseract) reject(new Error('timeout')); }, 25000);
+  });
+  return tesseractPromise;
+}
+
+function openScan() { scan = { phase: 'idle', progress: 0, lines: [] }; go('scan'); }
+function resetScan() { scan = { phase: 'idle', progress: 0, lines: [] }; render(); }
+
+function scrScan() {
+  if (scan.phase === 'reading') return `
+    <div class="empty" style="padding-top:56px">
+      <div class="ico" style="animation:spin 1s linear infinite">${I.search}</div>
+      <strong style="display:block;font-size:16px;color:var(--ink)">Lecture du ticket…</strong>
+      <div class="muted" style="margin-top:6px;max-width:260px;margin-inline:auto">La toute première fois, le lecteur se télécharge (quelques secondes).</div>
+      <div class="progress" style="max-width:220px;margin:18px auto 0"><span id="ocrBar" style="width:${scan.progress}%"></span></div>
+      <div id="ocrPct" style="margin-top:8px;font-weight:700">${scan.progress}%</div>
+    </div>`;
+
+  if (scan.phase === 'manual') return `
+    <div class="card" style="margin-bottom:12px"><strong>Saisir le ticket</strong>
+      <p class="muted" style="font-size:13px;margin:6px 0 0">Une ligne par article : <b>quantité puis nom</b>.<br>Ex. « 3 Chablis », « 12 Coca », « 6 Café ».</p></div>
+    <textarea id="manualText" style="width:100%;min-height:170px;padding:12px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2);color:var(--ink);font-size:15px;font-family:inherit" placeholder="3 Chablis&#10;12 Coca&#10;6 Café"></textarea>
+    <button class="btn" style="margin-top:12px" onclick="analyzeManual()">Analyser</button>
+    <button class="btn btn-soft" style="margin-top:10px" onclick="resetScan()">Retour</button>`;
+
+  if (scan.phase === 'review') return scanReviewView();
+
+  // idle
+  return `
+    <div class="card" style="margin-bottom:14px">
+      <strong>Scanner le ticket du soir</strong>
+      <p class="muted" style="font-size:13.5px;margin:6px 0 0">Prends en photo le ticket récapitulatif des ventes. L'app lit les articles et te propose la mise à jour des stocks — tu valides avant que quoi que ce soit ne change.</p>
+    </div>
+    <label class="btn" style="display:block;text-align:center;cursor:pointer">📷 Prendre le ticket en photo
+      <input type="file" accept="image/*" capture="environment" hidden onchange="handleScanFile(this)"></label>
+    <label class="btn btn-soft" style="display:block;text-align:center;margin-top:10px;cursor:pointer">🖼️ Choisir une image
+      <input type="file" accept="image/*" hidden onchange="handleScanFile(this)"></label>
+    <button class="btn btn-outline" style="margin-top:10px" onclick="scanManual()">✍️ Saisir le ticket à la main</button>
+    <p class="muted" style="font-size:12px;text-align:center;margin-top:18px">🔒 La photo est analysée sur ton téléphone — rien n'est envoyé sur internet.</p>`;
+}
+
+function handleScanFile(input) { const f = input.files && input.files[0]; if (f) startOcr(f); }
+function scanManual() { scan.phase = 'manual'; render(); }
+function analyzeManual() {
+  scan.lines = buildReview(parseTicketText($('#manualText').value));
+  if (!scan.lines.length) return toast('Rien à analyser', 'err');
+  scan.phase = 'review'; render();
+}
+
+async function startOcr(file) {
+  scan.phase = 'reading'; scan.progress = 0; render();
+  try {
+    const T = await loadTesseract();
+    const { data } = await T.recognize(file, 'fra', {
+      logger: m => {
+        if (m.status === 'recognizing text') {
+          scan.progress = Math.round(m.progress * 100);
+          const bar = $('#ocrBar'), pct = $('#ocrPct');
+          if (bar) bar.style.width = scan.progress + '%';
+          if (pct) pct.textContent = scan.progress + '%';
+        }
+      }
+    });
+    scan.lines = buildReview(parseTicketText(data.text));
+    scan.phase = 'review'; render();
+    if (!scan.lines.length) toast('Aucune ligne détectée — réessaie ou saisis à la main', 'err');
+  } catch (e) {
+    toast('Lecture auto indisponible ici — passe en saisie manuelle', 'err');
+    scanManual();
+  }
+}
+
+/* Analyse du texte du ticket -> [{name, qty}] */
+function parseTicketText(text) {
+  const out = [];
+  for (let raw of String(text).split('\n')) {
+    const line = raw.trim();
+    if (!line) continue;
+    if (/total|sous-tot|tva|montant|caisse|serveur|table|reglement|règlement|carte|especes|espèces|merci|ticket|^[-=_*.\s]+$/i.test(line)) continue;
+    let qty = null, name = null, m;
+    if ((m = line.match(/^(\d{1,3})\s*[xX*]\s*(.+)$/))) { qty = +m[1]; name = m[2]; }
+    else if ((m = line.match(/^(.+?)\s*[xX*]\s*(\d{1,3})\b.*$/))) { qty = +m[2]; name = m[1]; }
+    else if ((m = line.match(/^(\d{1,3})\s+([A-Za-zÀ-ÿ].*)$/))) { qty = +m[1]; name = m[2]; }
+    if (!name || qty == null) continue;
+    name = name.replace(/[\d.,€%\-\s]+$/g, '').replace(/\s{2,}/g, ' ').trim();
+    if (name.length < 2 || qty < 1 || qty > 999) continue;
+    out.push({ name, qty });
+  }
+  return out;
+}
+
+function buildReview(parsed) {
+  return parsed.map(p => { const mt = matchItem(p.name); return { name: p.name, qty: p.qty, target: mt ? mt.kind + ':' + mt.id : '' }; });
+}
+
+const normTxt = (s) => String(s).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
+function matchItem(name) {
+  const n = normTxt(name); if (!n) return null;
+  const cands = [...DB.stocks.map(s => ({ kind: 'stock', id: s.id, label: s.nom })), ...DB.vins.map(v => ({ kind: 'cave', id: v.id, label: v.nom }))];
+  let best = null, score = 0;
+  for (const c of cands) { const s = simScore(n, normTxt(c.label)); if (s > score) { score = s; best = c; } }
+  return score >= 0.5 ? best : null;
+}
+function simScore(a, b) {
+  const ta = a.split(' ').filter(t => t.length >= 3), tb = new Set(b.split(' ').filter(t => t.length >= 3));
+  let inter = 0; ta.forEach(t => { if (tb.has(t)) inter++; });
+  let s = inter / Math.max(1, Math.min(ta.length, tb.size));
+  if (a.includes(b) || b.includes(a)) s = Math.max(s, 0.85);
+  return s;
+}
+
+function scanReviewView() {
+  if (!scan.lines.length) return `<div class="card">Aucune ligne à valider.</div><button class="btn" style="margin-top:12px" onclick="resetScan()">Recommencer</button>`;
+  const matched = scan.lines.filter(l => l.target).length;
+  const opts = (sel) => `<option value="">— ne pas décompter —</option>`
+    + `<optgroup label="Stocks">${DB.stocks.map(s => `<option value="stock:${s.id}" ${sel === 'stock:' + s.id ? 'selected' : ''}>${esc(s.nom)}</option>`).join('')}</optgroup>`
+    + `<optgroup label="Cave">${DB.vins.map(v => `<option value="cave:${v.id}" ${sel === 'cave:' + v.id ? 'selected' : ''}>${esc(v.nom)}</option>`).join('')}</optgroup>`;
+  return `
+    <div class="card" style="margin-bottom:12px">
+      <strong>${scan.lines.length} ligne(s) détectée(s)</strong>
+      <div class="muted" style="font-size:13px;margin-top:2px">${matched} reconnue(s) automatiquement. Vérifie les quantités et les correspondances, puis applique.</div>
+    </div>
+    <div class="grid-list">
+      ${scan.lines.map((l, i) => `
+        <div class="tile ${l.target ? '' : 'nomatch'}">
+          <div class="spread">
+            <div class="tile-title" style="font-size:14.5px">${esc(l.name)}${l.target ? '' : ' <span class="pill p-warn">à relier</span>'}</div>
+            <button class="icon-btn" onclick="removeScanLine(${i})" aria-label="Retirer">${I.trash}</button>
+          </div>
+          <div class="form-row" style="margin-top:10px">
+            ${fld('Quantité vendue', `<input type="number" inputmode="numeric" min="0" value="${l.qty}" onchange="setScanQty(${i}, this.value)">`)}
+            ${fld('Décompter de', `<select onchange="setScanTarget(${i}, this.value)">${opts(l.target)}</select>`)}
+          </div>
+        </div>`).join('')}
+    </div>
+    <button class="btn" style="margin-top:14px" onclick="applyScan()">Appliquer aux stocks</button>
+    <button class="btn btn-soft" style="margin-top:10px" onclick="resetScan()">Recommencer</button>`;
+}
+function setScanQty(i, v) { if (scan.lines[i]) scan.lines[i].qty = Math.max(0, +v || 0); }
+function setScanTarget(i, v) { if (scan.lines[i]) scan.lines[i].target = v; }
+function removeScanLine(i) { scan.lines.splice(i, 1); render(); }
+function applyScan() {
+  let ok = 0, skip = 0;
+  scan.lines.forEach(l => {
+    if (!l.target || !l.qty) { skip++; return; }
+    const [kind, id] = l.target.split(':');
+    const coll = kind === 'cave' ? DB.vins : DB.stocks;
+    const it = coll.find(x => x.id === id);
+    if (it) { it.quantite = Math.max(0, +it.quantite - +l.qty); ok++; } else skip++;
+  });
+  if (!ok) return toast('Aucune ligne reliée à un article', 'err');
+  save();
+  toast(`${ok} article(s) mis à jour${skip ? ` · ${skip} ignoré(s)` : ''}`, 'ok');
+  scan = { phase: 'idle', progress: 0, lines: [] };
+  go('stocks');
+}
+
+/* =========================================================================
    COMPOSANTS PARTAGÉS
    ========================================================================= */
 const fld = (label, input) => `<div class="field"><label>${esc(label)}</label>${input}</div>`;
@@ -629,6 +803,7 @@ function importData(file) {
 const SCREENS = {
   accueil:       { title: 'Jéroboam 120', brand: true, tab: 'accueil', render: scrAccueil },
   stocks:        { title: 'Stocks', tab: 'stocks', render: scrStocks, fab: 'editStock' },
+  scan:          { title: 'Scanner le ticket', tab: 'stocks', back: 'stocks', render: scrScan },
   cave:          { title: 'Cave / Vins', tab: 'cave', render: scrCave, fab: 'editVin' },
   menu:          { title: 'Menu du jour', tab: 'menu', render: scrMenu, fab: 'editMenuLine' },
   plus:          { title: 'Plus', tab: 'plus', render: scrPlus },
@@ -696,4 +871,6 @@ Object.assign(window, {
   editShift, editFournisseur, addComm, toggleComm, setCheckTab, toggleCheck,
   addCheck, delCheck, resetCheck, editNote, pinNote, delItem, filterList,
   exportData, toggleTheme, closeSheet, submitSheet, $,
+  openScan, resetScan, handleScanFile, scanManual, analyzeManual,
+  setScanQty, setScanTarget, removeScanLine, applyScan,
 });

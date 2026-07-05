@@ -354,6 +354,10 @@ button.row:active { background: var(--surface-2); }
 .toast.err { background: var(--red); color: #fff; }
 @keyframes toastIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
 
+/* ---------- Scan ticket ---------- */
+@keyframes spin { to { transform: rotate(360deg); } }
+.tile.nomatch { border-left: 3px solid var(--amber); }
+
 /* ---------- Divers ---------- */
 .muted { color: var(--muted); }
 .grid-list { display: flex; flex-direction: column; gap: 10px; }
