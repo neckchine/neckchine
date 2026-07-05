@@ -274,6 +274,19 @@ button.row:active { background: var(--surface-2); }
 .tile-sub { font-size: 12.5px; color: var(--muted); margin-top: 2px; }
 .tile-actions { display: flex; gap: 8px; margin-top: 12px; align-items: center; }
 
+/* ---------- Carte menu du jour ---------- */
+.menu-card { padding: 4px 16px 14px; }
+.menu-cat {
+  font-family: Georgia, "Times New Roman", serif; font-size: 12.5px; font-weight: 700;
+  letter-spacing: 1px; text-transform: uppercase; color: var(--wine);
+  margin: 15px 0 4px; padding-bottom: 6px; border-bottom: 1px solid var(--line);
+}
+.menu-item { display: flex; align-items: flex-start; gap: 8px; padding: 8px 0; }
+.menu-item .mi-main { flex: 1; min-width: 0; }
+.menu-item .mi-name { font-size: 15px; font-weight: 600; }
+.menu-item .mi-desc { font-size: 12.5px; color: var(--muted); margin-top: 2px; }
+.menu-item .mi-price { font-weight: 800; color: var(--wine); white-space: nowrap; margin-top: 1px; }
+
 /* ---------- Boutons ---------- */
 .btn {
   background: var(--wine); color: #fff; border: none; padding: 13px 18px;

@@ -25,6 +25,7 @@ const I = {
   box: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7.5 12 3l9 4.5v9L12 21 3 16.5z"/><path d="M3 7.5 12 12l9-4.5"/><path d="M12 12v9"/></svg>',
   wine: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M8 22h8"/><path d="M12 15.5V22"/><path d="M6.5 3h11l-.7 6.2a4.8 4.8 0 0 1-9.6 0z"/><path d="M6.9 6.5h10.2"/></svg>',
   plate: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="3.4"/></svg>',
+  menu: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="3" width="14" height="18" rx="2.2"/><path d="M9 8h6M9 12h6M9 16h3"/></svg>',
   more: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="3.5" width="7" height="7" rx="2"/><rect x="13.5" y="3.5" width="7" height="7" rx="2"/><rect x="3.5" y="13.5" width="7" height="7" rx="2"/><rect x="13.5" y="13.5" width="7" height="7" rx="2"/></svg>',
   truck: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h11v9H3z"/><path d="M14 9h4l3 3v3h-7z"/><circle cx="7" cy="18" r="1.8"/><circle cx="17" cy="18" r="1.8"/></svg>',
   calendar: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="5" width="17" height="16" rx="2.5"/><path d="M3.5 9.5h17"/><path d="M8 3v4M16 3v4"/></svg>',
@@ -47,10 +48,23 @@ const I = {
 /* ---------- Persistance ---------- */
 let DB = load();
 function load() {
-  try { const raw = localStorage.getItem(STORAGE_KEY); if (raw) return JSON.parse(raw); }
+  try { const raw = localStorage.getItem(STORAGE_KEY); if (raw) return normalize(JSON.parse(raw)); }
   catch (e) { console.warn(e); }
   return seed();
 }
+/* Migration : ancienne clé « plats » -> « menus » (menu du jour) */
+function normalize(db) {
+  if (!db.menus) {
+    db.menus = Array.isArray(db.plats)
+      ? db.plats.map(p => ({ id: p.id, date: p.date, categorie: 'Plat', nom: p.nom, description: p.description, prix: p.prix }))
+      : [];
+  }
+  delete db.plats;
+  return db;
+}
+const MENU_CATS = ['Entrée', 'Plat', 'Suggestion', 'Dessert'];
+const catLabel = (c) => ({ 'Entrée': 'Entrées', 'Plat': 'Plats', 'Dessert': 'Desserts', 'Suggestion': 'Suggestions' }[c] || c);
+save(); // persiste immédiatement les données initialisées / migrées
 function save() {
   try { localStorage.setItem(STORAGE_KEY, JSON.stringify(DB)); }
   catch (e) { toast('Sauvegarde impossible', 'err'); }
@@ -85,9 +99,11 @@ function seed() {
       { id: 'p2', employe: 'Amina Chef', role: 'Cheffe de rang', jour: t, debut: '11:00', fin: '16:00' },
       { id: 'p3', employe: 'Lucas Petit', role: 'Serveur', jour: t, debut: '18:00', fin: '23:30' },
     ],
-    plats: [
-      { id: 'd1', nom: 'Suprême de volaille, jus au thym', description: 'Écrasé de pommes de terre à l\'huile d\'olive', prix: 24, date: t, dispo: true },
-      { id: 'd2', nom: 'Risotto aux champignons', description: 'Parmesan 24 mois, roquette', prix: 19, date: t, dispo: true },
+    menus: [
+      { id: 'd1', date: t, categorie: 'Entrée', nom: 'Velouté de potimarron', description: 'Crème légère & graines torréfiées', prix: 9 },
+      { id: 'd2', date: t, categorie: 'Plat', nom: 'Suprême de volaille, jus au thym', description: 'Écrasé de pommes de terre à l\'huile d\'olive', prix: 19 },
+      { id: 'd3', date: t, categorie: 'Plat', nom: 'Risotto aux champignons', description: 'Parmesan 24 mois, roquette', prix: 17 },
+      { id: 'd4', date: t, categorie: 'Dessert', nom: 'Tarte fine aux pommes', description: 'Glace vanille de Madagascar', prix: 8 },
     ],
     comm: [
       { id: 'c1', type: 'message', texte: 'Table 12 : allergie fruits à coque, à signaler en cuisine.', auteur: 'Salle', ts: Date.now() - 3600e3, resolu: false },
@@ -129,7 +145,7 @@ const fournisseurNom = (id) => (DB.fournisseurs.find(f => f.id === id) || {}).no
 /* ---------- Accueil / tableau de bord (#18) ---------- */
 function scrAccueil() {
   const sb = stockBas(), vb = vinBas(), co = commOuverts();
-  const platsJour = DB.plats.filter(p => p.date === todayISO());
+  const menuJour = DB.menus.filter(m => m.date === todayISO());
   const planningJour = DB.planning.filter(p => p.jour === todayISO()).sort((a, b) => a.debut.localeCompare(b.debut));
   const valeurCave = DB.vins.reduce((t, v) => t + v.quantite * (v.prixAchat || 0), 0);
   const alertes = sb.length + vb.length;
@@ -143,7 +159,7 @@ function scrAccueil() {
       <div class="hrow">
         <div class="hchip"><div class="n">${alertes}</div><div class="l">Alerte${alertes > 1 ? 's' : ''} de stock</div></div>
         <div class="hchip"><div class="n">${co.length}</div><div class="l">Message${co.length > 1 ? 's' : ''} en cours</div></div>
-        <div class="hchip"><div class="n">${platsJour.length}</div><div class="l">Plat${platsJour.length > 1 ? 's' : ''} du jour</div></div>
+        <div class="hchip"><div class="n">${menuJour.length}</div><div class="l">Au menu du jour</div></div>
       </div>
     </div>
 
@@ -161,12 +177,14 @@ function scrAccueil() {
         <div class="v">${planningJour.length}</div><div class="l">Au service aujourd'hui</div></button>
     </div>
 
-    ${platsJour.length ? `<div class="eyebrow" style="margin-top:20px">Plats du jour <a onclick="go('plats')">Gérer</a></div>
-      <div class="grid-list">${platsJour.map(p => `
-        <div class="tile"><div class="spread">
-          <div><div class="tile-title">${esc(p.nom)}</div><div class="tile-sub">${esc(p.description || '')}</div></div>
-          <div class="nowrap">${p.dispo ? `<span class="pill p-price">${eur(p.prix)}</span>` : '<span class="pill p-danger">86</span>'}</div>
-        </div></div>`).join('')}</div>` : ''}
+    <div class="eyebrow" style="margin-top:20px">Menu du jour <a onclick="go('menu')">${menuJour.length ? 'Modifier' : 'Écrire'}</a></div>
+    ${menuJour.length
+      ? `<div class="card menu-card">${MENU_CATS.filter(c => menuJour.some(i => i.categorie === c)).map(cat => `
+          <div class="menu-cat">${catLabel(cat)}</div>
+          ${menuJour.filter(i => i.categorie === cat).map(i => menuLine(i)).join('')}`).join('')}</div>`
+      : `<button class="row" onclick="go('menu')"><div class="r-ico">${I.menu}</div>
+          <div class="r-main"><div class="r-title">Aucun menu pour aujourd'hui</div><div class="r-sub">Touchez pour l'écrire depuis la cuisine</div></div>
+          <span class="chev">${I.chevron}</span></button>`}
 
     ${planningJour.length ? `<div class="eyebrow" style="margin-top:20px">Équipe du jour</div>
       <div class="rows">${planningJour.map(p => `
@@ -311,41 +329,44 @@ function quickVin(id) {
   v.quantite = +v.quantite + +val; save(); render(); toast('Cave mise à jour', 'ok');
 }
 
-/* ---------- Plats du jour (#22) ---------- */
-function scrPlats() {
-  const jours = [...new Set(DB.plats.map(p => p.date))].sort().reverse();
-  if (!jours.length) return empty(I.plate, 'Aucun plat', 'Touchez + pour programmer un plat du jour.');
-  return jours.map(day => `
-    <div class="eyebrow" style="text-transform:capitalize">${frDateLong(day)}${day === todayISO() ? ' <span class="pill p-wine">Aujourd\'hui</span>' : ''}</div>
-    <div class="grid-list">
-      ${DB.plats.filter(p => p.date === day).map(p => `
-        <div class="tile" ${p.dispo ? '' : 'style="opacity:.6"'}>
-          <div class="tile-head">
-            <div><div class="tile-title">${esc(p.nom)}</div><div class="tile-sub">${esc(p.description || '')}</div></div>
-            <span class="pill p-price">${eur(p.prix)}</span>
-          </div>
-          <div class="tile-actions">
-            <button class="btn-sm ${p.dispo ? 'btn-soft' : 'btn'}" style="${p.dispo ? '' : 'background:var(--red)'}" onclick="togglePlat('${p.id}')">${p.dispo ? '✔ Disponible' : '⛔ 86 / épuisé'}</button>
-            <button class="icon-btn" onclick="editPlat('${p.id}')">${I.edit}</button>
-            <button class="icon-btn" onclick="delItem('plats','${p.id}')">${I.trash}</button>
-          </div></div>`).join('')}
-    </div>`).join('');
+/* ---------- Menu du jour (#22) ---------- */
+function scrMenu() {
+  const jours = [...new Set(DB.menus.map(m => m.date))].sort().reverse();
+  if (!jours.length) return empty(I.menu, 'Aucun menu', 'Touchez + pour écrire le menu du jour. Il s\'affichera sur l\'accueil pour toute l\'équipe.');
+  return jours.map(day => {
+    const items = DB.menus.filter(m => m.date === day);
+    return `<div class="eyebrow" style="text-transform:capitalize">${frDateLong(day)}${day === todayISO() ? ' <span class="pill p-wine">Aujourd\'hui</span>' : ''}</div>
+      <div class="card menu-card">
+        ${MENU_CATS.filter(c => items.some(i => i.categorie === c)).map(cat => `
+          <div class="menu-cat">${catLabel(cat)}</div>
+          ${items.filter(i => i.categorie === cat).map(i => menuLine(i, true)).join('')}
+        `).join('') || '<p class="muted" style="padding:12px 0">Menu vide — touchez + pour ajouter un plat.</p>'}
+      </div>`;
+  }).join('');
 }
-function togglePlat(id) { const p = DB.plats.find(x => x.id === id); if (!p) return; p.dispo = !p.dispo; save(); render(); toast(p.dispo ? 'Marqué disponible' : 'Marqué 86 (épuisé)', p.dispo ? 'ok' : ''); }
-function editPlat(id) {
-  const p = id ? DB.plats.find(x => x.id === id) : { nom: '', description: '', prix: 0, date: todayISO(), dispo: true };
-  sheet(id ? 'Modifier le plat' : 'Nouveau plat du jour', `
-    ${fld('Nom du plat', `<input id="m_nom" value="${esc(p.nom)}">`)}
-    ${fld('Description', `<textarea id="m_desc" placeholder="Garniture, accompagnement…">${esc(p.description)}</textarea>`)}
+function menuLine(i, editable = false) {
+  return `<div class="menu-item">
+    <div class="mi-main"><div class="mi-name">${esc(i.nom)}</div>${i.description ? `<div class="mi-desc">${esc(i.description)}</div>` : ''}</div>
+    ${i.prix ? `<span class="mi-price">${eur(i.prix)}</span>` : ''}
+    ${editable ? `<button class="icon-btn" onclick="editMenuLine('${i.id}')" aria-label="Modifier">${I.edit}</button>
+    <button class="icon-btn" onclick="delItem('menus','${i.id}')" aria-label="Supprimer">${I.trash}</button>` : ''}
+  </div>`;
+}
+function editMenuLine(id) {
+  const m = id ? DB.menus.find(x => x.id === id) : { nom: '', description: '', categorie: 'Plat', prix: 0, date: todayISO() };
+  sheet(id ? 'Modifier la ligne du menu' : 'Ajouter au menu', `
+    ${fld('Section', `<select id="m_cat">${MENU_CATS.map(c => `<option ${c === m.categorie ? 'selected' : ''}>${c}</option>`).join('')}</select>`)}
+    ${fld('Intitulé du plat', `<input id="m_nom" value="${esc(m.nom)}" placeholder="Ex. Suprême de volaille, jus au thym">`)}
+    ${fld('Description (facultatif)', `<textarea id="m_desc" placeholder="Garniture, accompagnement…">${esc(m.description)}</textarea>`)}
     <div class="form-row">
-      ${fld('Prix (€)', `<input id="m_prix" type="number" inputmode="decimal" min="0" step="0.5" value="${esc(p.prix)}">`)}
-      ${fld('Date', `<input id="m_date" type="date" value="${esc(p.date)}">`)}
+      ${fld('Prix € (facultatif)', `<input id="m_prix" type="number" inputmode="decimal" min="0" step="0.5" value="${esc(m.prix)}">`)}
+      ${fld('Date', `<input id="m_date" type="date" value="${esc(m.date)}">`)}
     </div>
   `, () => {
-    const d = { nom: $('#m_nom').value.trim(), description: $('#m_desc').value.trim(), prix: +$('#m_prix').value, date: $('#m_date').value, dispo: id ? p.dispo : true };
-    if (!d.nom) return toast('Le nom est obligatoire', 'err'), false;
-    if (id) Object.assign(p, d); else DB.plats.push({ id: uid(), ...d });
-    save(); render(); toast('Plat enregistré', 'ok');
+    const d = { categorie: $('#m_cat').value, nom: $('#m_nom').value.trim(), description: $('#m_desc').value.trim(), prix: +$('#m_prix').value, date: $('#m_date').value };
+    if (!d.nom) return toast('L\'intitulé est obligatoire', 'err'), false;
+    if (id) Object.assign(m, d); else DB.menus.push({ id: uid(), ...d });
+    save(); render(); toast('Menu mis à jour', 'ok');
   });
 }
 
@@ -609,7 +630,7 @@ const SCREENS = {
   accueil:       { title: 'Jéroboam 120', brand: true, tab: 'accueil', render: scrAccueil },
   stocks:        { title: 'Stocks', tab: 'stocks', render: scrStocks, fab: 'editStock' },
   cave:          { title: 'Cave / Vins', tab: 'cave', render: scrCave, fab: 'editVin' },
-  plats:         { title: 'Plats du jour', tab: 'plats', render: scrPlats, fab: 'editPlat' },
+  menu:          { title: 'Menu du jour', tab: 'menu', render: scrMenu, fab: 'editMenuLine' },
   plus:          { title: 'Plus', tab: 'plus', render: scrPlus },
   communication: { title: 'Salle ↔ Cuisine', tab: 'plus', back: 'plus', render: scrCommunication },
   planning:      { title: 'Planning équipe', tab: 'plus', back: 'plus', render: scrPlanning, fab: 'editShift' },
@@ -621,7 +642,7 @@ const TABS = [
   { id: 'accueil', label: 'Accueil', icon: I.home },
   { id: 'stocks', label: 'Stocks', icon: I.box, badge: () => stockBas().length },
   { id: 'cave', label: 'Cave', icon: I.wine, badge: () => vinBas().length },
-  { id: 'plats', label: 'Plats', icon: I.plate },
+  { id: 'menu', label: 'Menu', icon: I.menu },
   { id: 'plus', label: 'Plus', icon: I.more, badge: () => commOuverts().length },
 ];
 
@@ -671,7 +692,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
 /* Exposition pour les onclick inline */
 Object.assign(window, {
-  go, editStock, quickRestock, editVin, quickVin, editPlat, togglePlat,
+  go, editStock, quickRestock, editVin, quickVin, editMenuLine,
   editShift, editFournisseur, addComm, toggleComm, setCheckTab, toggleCheck,
   addCheck, delCheck, resetCheck, editNote, pinNote, delItem, filterList,
   exportData, toggleTheme, closeSheet, submitSheet, $,

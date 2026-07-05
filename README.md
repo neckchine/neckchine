@@ -16,7 +16,7 @@ transférer sur un autre poste.
 | 7 | **Fournisseurs** | Contacts, catégories, délais de livraison, notes |
 | 10 | **Cave / Vins** | Bouteilles, millésimes, emplacements, valeur du stock |
 | 11 | **Planning équipe** | Services sur 7 jours par employé et par poste |
-| 22 | **Plats du jour** | Programmation par date + bascule « 86 / épuisé » |
+| 22 | **Menu du jour** | La cuisine écrit le menu (entrées, plats, desserts, suggestions) — visible par toute l'équipe |
 | 23 | **Salle ↔ Cuisine** | Messages, signalements et plats épuisés en temps réel |
 | 27 | **Checklists** | Ouverture / fermeture, avec suivi de progression |
 | 30 | **Notes & consignes** | Le cahier de liaison numérique de l'équipe |
