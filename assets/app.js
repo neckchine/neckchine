@@ -68,7 +68,9 @@ save(); // persiste immédiatement les données initialisées / migrées
 function save() {
   try { localStorage.setItem(STORAGE_KEY, JSON.stringify(DB)); }
   catch (e) { toast('Sauvegarde impossible', 'err'); }
+  if (window.Cloud) window.Cloud.onSave(DB);
 }
+let cloudState = { enabled: false, connected: false, email: null };
 
 /* ---------- Données de démonstration ---------- */
 function seed() {
@@ -389,6 +391,15 @@ function scrPlus() {
         <div class="r-right">${m.badge ? `<span class="pill p-danger">${m.badge}</span>` : ''}<span class="chev">${I.chevron}</span></div>
       </button>`).join('')}
     </div>
+
+    <div class="eyebrow" style="margin-top:22px">Synchronisation</div>
+    ${cloudState.connected
+      ? `<div class="card"><div class="spread"><div><strong>Connecté ☁️</strong><div class="muted" style="font-size:13px">${esc(cloudState.email || '')}</div></div><button class="btn-sm btn-soft" onclick="cloudLogout()">Se déconnecter</button></div><div class="muted" style="font-size:12.5px;margin-top:10px">Tes données sont partagées en temps réel avec l'équipe.</div></div>`
+      : cloudState.enabled
+        ? `<div class="card"><strong>Se connecter</strong><p class="muted" style="font-size:13px;margin:6px 0 10px">Reçois un lien de connexion par email. Seuls les emails autorisés ont accès.</p>
+           <input id="cloudEmail" type="email" inputmode="email" placeholder="ton@email.fr" style="width:100%;padding:12px 13px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2);color:var(--ink);font-size:16px" onkeydown="if(event.key==='Enter')cloudLogin()">
+           <button class="btn" style="margin-top:10px" onclick="cloudLogin()">Recevoir le lien de connexion</button></div>`
+        : `<div class="card muted" style="font-size:13px">Mode hors-ligne — données enregistrées sur cet appareil. La synchronisation entre appareils s'active sur la version en ligne (hébergée).</div>`}
 
     <div class="eyebrow" style="margin-top:22px">Données & sauvegarde</div>
     <div class="rows">
@@ -865,6 +876,29 @@ document.addEventListener('DOMContentLoaded', () => {
   render();
 });
 
+/* ---------- Connexion / synchronisation ---------- */
+async function cloudLogin() {
+  const el = $('#cloudEmail'); const email = (el && el.value || '').trim();
+  if (!email || !/.+@.+\..+/.test(email)) return toast('Entre un email valide', 'err');
+  const err = await window.Cloud.signIn(email);
+  if (err) toast('Erreur : ' + err.message, 'err');
+  else toast('Lien envoyé — regarde tes emails 📩', 'ok');
+}
+function cloudLogout() { window.Cloud.signOut(); toast('Déconnecté'); }
+
+/* Pont avec la couche cloud (cloud.js) */
+window.__jero = {
+  // Applique un état venu du cloud : met à jour le cache local + l'affichage,
+  // SANS repousser vers le cloud (sinon boucle de synchro entre appareils).
+  setState(d) {
+    DB = normalize(d);
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(DB)); } catch (e) { /* cache seul */ }
+    render();
+  },
+  getState() { return DB; },
+  onCloudState(s) { cloudState = s; if (currentScreen() === 'plus') render(); },
+};
+
 /* Exposition pour les onclick inline */
 Object.assign(window, {
   go, editStock, quickRestock, editVin, quickVin, editMenuLine,
@@ -873,4 +907,5 @@ Object.assign(window, {
   exportData, toggleTheme, closeSheet, submitSheet, $,
   openScan, resetScan, handleScanFile, scanManual, analyzeManual,
   setScanQty, setScanTarget, removeScanLine, applyScan,
+  cloudLogin, cloudLogout,
 });
