@@ -499,38 +499,45 @@ function planningCalendarView() {
       <button class="icon-btn" onclick="planningWeekShift(7)" aria-label="7 jours après">›</button>
     </div>
     <div style="text-align:center;margin-bottom:12px"><button class="btn-sm btn-soft" onclick="planningToday()">Aujourd'hui</button></div>
-    <button class="btn" style="margin-bottom:12px" onclick="generatePlanning()">✨ Générer le planning</button>
-    <div class="card" style="margin-bottom:14px">
-      <strong>🤖 Assistant IA</strong>
-      <p class="muted" style="font-size:12.5px;margin:4px 0 8px">Donne tes consignes en langage normal ; l'IA génère la semaine.</p>
-      <textarea id="aiInstr" placeholder="Ex. Julien pas le samedi · équilibrer les week-ends · Lucas 3 soirs max" style="width:100%;min-height:62px;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2);color:var(--ink);font-size:14px;font-family:inherit"></textarea>
-      <button class="btn btn-soft" style="margin-top:8px" onclick="planningAI()">Générer avec l'IA</button>
+    ${DB.staff.length === 0
+      ? `<div class="card muted" style="font-size:13px">Ajoute d'abord ton personnel (onglet Personnel) et leurs disponibilités.</div>`
+      : planningGrid(days)}
+    <div style="display:flex;gap:8px;margin-top:12px">
+      <button class="btn" style="flex:1" onclick="generatePlanning()">✨ Générer</button>
+      <button class="btn btn-soft" style="flex:1" onclick="planningAI()">🤖 Avec l'IA</button>
     </div>
-    ${DB.staff.length === 0 ? `<div class="card muted" style="font-size:13px">Ajoute d'abord ton personnel (onglet Personnel) et leurs disponibilités.</div>` : days.map(dayCard).join('')}`;
+    <div class="card" style="margin-top:10px">
+      <strong style="font-size:14px">🤖 Consignes pour l'IA</strong>
+      <textarea id="aiInstr" placeholder="Ex. Julien pas le samedi · équilibrer les week-ends · Lucas 3 soirs max" style="width:100%;min-height:54px;margin-top:6px;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2);color:var(--ink);font-size:14px;font-family:inherit"></textarea>
+    </div>
+    <p class="hint" style="margin-top:10px">Touche une case pour ajouter un créneau · touche un créneau pour le retirer.</p>`;
 }
-function dayCard(date) {
-  const wd = wdIndex(date), isToday = date === todayISO();
-  const services = SERVICES.filter(s => DB.besoins[s.key] && DB.besoins[s.key].actif);
-  return `<div class="card" style="margin-bottom:10px${isToday ? ';border-left:3px solid var(--wine)' : ''}">
-    <div class="spread" style="margin-bottom:6px"><strong style="text-transform:capitalize">${WEEKDAYS[wd]} ${new Date(date).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })}</strong>${isToday ? '<span class="pill p-wine">Auj.</span>' : ''}</div>
-    ${services.map(svc => {
-      const b = DB.besoins[svc.key];
-      const rows = PLAN_CATS.map(cat => {
-        const need = Number(b[cat]) || 0;
-        const assigned = DB.planning.filter(p => p.date === date && p.service === svc.key && p.categorie === cat);
-        if (need === 0 && assigned.length === 0) return '';
-        const manque = Math.max(0, need - assigned.length);
-        return `<div style="margin:5px 0"><span class="muted" style="font-size:11.5px">${cat}${need ? ` ${assigned.length}/${need}` : ''}</span>
-          <div class="tag-row" style="margin-top:3px">
-            ${assigned.map(a => `<span class="pill p-muted">${esc(a.nom)} <span onclick="removeAssignment('${a.id}')" style="cursor:pointer;opacity:.55;font-weight:700">✕</span></span>`).join('')}
-            <button class="pill p-wine" style="border:none;cursor:pointer" onclick="addAssignment('${date}','${svc.key}','${cat}')">＋</button>
-            ${manque ? `<span class="pill p-warn">manque ${manque}</span>` : ''}
-          </div></div>`;
-      }).join('');
-      return `<div style="margin-top:8px"><div style="font-weight:600;font-size:13px">${svc.label} · ${b.debut}–${b.fin}</div>${rows || '<span class="muted" style="font-size:12px">—</span>'}</div>`;
-    }).join('')}
-  </div>`;
+function planningGrid(days) {
+  const head = days.map(d => { const isT = d === todayISO(); return `<th class="pg-day${isT ? ' pg-today' : ''}">${WEEKDAYS_SHORT[wdIndex(d)]}<br><span>${new Date(d).getDate()}</span></th>`; }).join('');
+  const rows = DB.staff.map(s => {
+    const cells = days.map(d => {
+      const shifts = DB.planning.filter(p => p.date === d && p.employeId === s.id).sort((a, b) => a.debut.localeCompare(b.debut));
+      const chips = shifts.map(sh => `<span class="pg-chip pg-${sh.service}" onclick="event.stopPropagation();removeAssignment('${sh.id}')" title="Retirer">${sh.service === 'midi' ? 'Midi' : 'Soir'}<br>${sh.debut}</span>`).join('');
+      return `<td class="pg-cell" onclick="cellAdd('${d}','${s.id}')">${chips || '<span class="pg-plus">+</span>'}</td>`;
+    }).join('');
+    return `<tr><th class="pg-name">${esc(s.nom)}<br><span>${esc(s.categorie)}</span></th>${cells}</tr>`;
+  }).join('');
+  return `<div class="pg-wrap"><table class="pg"><thead><tr><th class="pg-corner"></th>${head}</tr></thead><tbody>${rows}</tbody></table></div>`;
 }
+function cellAdd(date, employeId) {
+  const s = DB.staff.find(x => x.id === employeId); if (!s) return;
+  const b = DB.besoins.midi || { debut: '11:00', fin: '15:00' };
+  const jour = new Date(date).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'short' });
+  sheet(`${s.nom} · ${jour}`, `
+    ${fld('Service', `<select id="c_svc" onchange="cellSvcChange()">${SERVICES.map(x => `<option value="${x.key}">${x.label}</option>`).join('')}</select>`)}
+    <div class="form-row">${fld('Début', `<input id="c_deb" type="time" value="${b.debut}">`)}${fld('Fin', `<input id="c_fin" type="time" value="${b.fin}">`)}</div>
+  `, () => {
+    const svc = $('#c_svc').value;
+    DB.planning.push({ id: uid(), date, service: svc, employeId: s.id, nom: s.nom, categorie: s.categorie, role: s.role, debut: $('#c_deb').value, fin: $('#c_fin').value });
+    save(); render(); toast('Créneau ajouté', 'ok');
+  });
+}
+function cellSvcChange() { const b = DB.besoins[$('#c_svc').value]; if (b) { if ($('#c_deb')) $('#c_deb').value = b.debut; if ($('#c_fin')) $('#c_fin').value = b.fin; } }
 function generatePlanning() {
   if (!DB.staff.length) return toast('Ajoute d\'abord du personnel', 'err');
   const days = weekDays(planningWeek);
@@ -1122,7 +1129,7 @@ Object.assign(window, {
   go, editStock, quickRestock, editVin, quickVin, editMenuLine,
   editFournisseur, addComm, toggleComm, setCheckTab, toggleCheck,
   setPlanningTab, planningWeekShift, planningToday, generatePlanning, addAssignment, removeAssignment,
-  editStaff, setBesoin, setBesoinActif, planningAI,
+  cellAdd, cellSvcChange, editStaff, setBesoin, setBesoinActif, planningAI,
   addCheck, delCheck, resetCheck, editNote, pinNote, delItem, filterList,
   exportData, toggleTheme, closeSheet, submitSheet, $,
   openScan, resetScan, handleScanFile, scanManual, analyzeManual,
