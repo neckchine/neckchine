@@ -80,6 +80,11 @@
     const { error } = await client.auth.verifyOtp({ email: String(email).trim(), token: String(token).trim(), type: 'email' });
     return error;
   }
+  async function signInWithPin(pin) {
+    if (!client) return { message: 'Cloud indisponible' };
+    const { error } = await client.auth.signInWithPassword({ email: cfg.AUTH_EMAIL, password: String(pin).trim() });
+    return error;
+  }
   async function signOut() { if (client) await client.auth.signOut(); session = null; pushUI(); }
 
   function pushUI() {
@@ -95,7 +100,7 @@
   // API exposée à app.js
   window.Cloud = {
     onSave(state) { if (!session) return; clearTimeout(pushTimer); pushTimer = setTimeout(() => push(state), 400); },
-    signIn, verifyCode, signOut,
+    signIn, verifyCode, signInWithPin, signOut,
     isConnected: () => !!session,
   };
 

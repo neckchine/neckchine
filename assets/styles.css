@@ -358,6 +358,27 @@ button.row:active { background: var(--surface-2); }
 @keyframes spin { to { transform: rotate(360deg); } }
 .tile.nomatch { border-left: 3px solid var(--amber); }
 
+/* ---------- Écran de code (gate) ---------- */
+#gateRoot { position: fixed; inset: 0; z-index: 90; }
+.gate {
+  position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; padding: 24px;
+  background: linear-gradient(160deg, var(--wine) 0%, var(--wine-2) 100%);
+}
+.gate-card {
+  width: 100%; max-width: 340px; background: var(--surface); border-radius: 22px;
+  padding: 30px 24px; text-align: center; box-shadow: var(--shadow-lg);
+}
+.gate-logo { font-size: 44px; }
+.gate-title { font-family: Georgia, serif; font-size: 24px; font-weight: 700; margin-top: 4px; }
+.gate-sub { color: var(--muted); font-size: 14px; margin: 4px 0 20px; }
+.gate-pin {
+  width: 100%; padding: 14px; border: 1px solid var(--line); border-radius: 14px;
+  background: var(--surface-2); color: var(--ink);
+  font-size: 30px; letter-spacing: 12px; text-align: center; margin-bottom: 14px;
+}
+.gate-pin:focus { outline: none; border-color: var(--wine); }
+.gate-skip { display: block; width: 100%; margin-top: 12px; background: none; border: none; color: var(--muted); font-size: 13px; cursor: pointer; }
+
 /* ---------- Divers ---------- */
 .tag-row { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
 .muted { color: var(--muted); }
