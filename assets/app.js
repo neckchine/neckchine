@@ -63,6 +63,7 @@ function normalize(db) {
   if (!Array.isArray(db.staff)) db.staff = seedStaff();
   if (!db.besoins) db.besoins = defaultBesoins();
   if (!Array.isArray(db.planning)) db.planning = [];
+  if (!Array.isArray(db.commandes)) db.commandes = [];
   // Ancien format de planning (sans « service ») -> on repart propre
   db.planning = db.planning.filter(p => p && p.service && p.employeId);
   return db;
@@ -122,6 +123,7 @@ function seed() {
     staff: seedStaff(),
     besoins: defaultBesoins(),
     planning: [],
+    commandes: [],
     menus: [
       { id: 'd1', date: t, categorie: 'Entrée', nom: 'Velouté de potimarron', description: 'Crème légère & graines torréfiées', prix: 9 },
       { id: 'd2', date: t, categorie: 'Plat', nom: 'Suprême de volaille, jus au thym', description: 'Écrasé de pommes de terre à l\'huile d\'olive', prix: 19 },
@@ -402,7 +404,8 @@ function scrPlus() {
     { s: 'assistant', ic: I.chat, t: 'Assistant IA', d: 'Pose une question sur tes données' },
     { s: 'communication', ic: I.chat, t: 'Salle ↔ Cuisine', d: 'Messages, signalements & 86', badge: co },
     { s: 'planning', ic: I.calendar, t: 'Planning équipe', d: 'Grille, dispos & génération' },
-    { s: 'fournisseurs', ic: I.truck, t: 'Fournisseurs', d: `${DB.fournisseurs.length} contact(s) · commandes IA` },
+    { s: 'commandes', ic: I.box, t: 'À commander', d: `${DB.commandes.filter(c => !c.fait).length} produit(s) à commander` },
+    { s: 'fournisseurs', ic: I.truck, t: 'Fournisseurs', d: `${DB.fournisseurs.length} contact(s)` },
     { s: 'checklists', ic: I.check, t: 'Checklists', d: 'Ouverture & fermeture' },
     { s: 'notes', ic: I.note, t: 'Notes & consignes', d: 'Cahier de liaison de l\'équipe' },
   ];
@@ -674,7 +677,7 @@ function setBesoinActif(svc, val) { DB.besoins[svc].actif = val; save(); render(
 
 /* ---------- Fournisseurs (#7) ---------- */
 function scrFournisseurs() {
-  return `<button class="btn" style="margin-bottom:12px" onclick="aiOrders()">🛒 Préparer les commandes (IA)</button>
+  return `<button class="btn" style="margin-bottom:12px" onclick="go('commandes')">🛒 À commander</button>
     ${searchBar('Rechercher un fournisseur…')}
     <div class="grid-list" id="list">
       ${DB.fournisseurs.map(f => `
@@ -993,37 +996,51 @@ async function askAssistant(preset) {
   const log = $('#asgLog'); if (log) log.scrollTop = log.scrollHeight;
 }
 
-/* --- Commandes fournisseurs auto --- */
-async function aiOrders() {
-  if (!window.Cloud || !window.Cloud.isConnected()) return toast('Connecte-toi avec le code pour l\'IA', 'err');
-  const bas = stockBas();
-  if (!bas.length) return toast('Aucun produit sous le seuil 👌', 'ok');
-  const alertes = bas.map(s => ({ produit: s.nom, quantite: s.quantite, unite: s.unite, seuil: s.seuil, fournisseur: fournisseurNom(s.fournisseurId) }));
-  const fournisseurs = DB.fournisseurs.map(f => ({ nom: f.nom, email: f.email, categorie: f.categorie }));
-  toast('L\'IA prépare les commandes…');
-  const { data, error } = await window.Cloud.ai({ task: 'order', alertes, fournisseurs });
-  if (error || (data && data.error)) return toast('IA indisponible : ' + ((error && error.message) || (data && data.error) || ''), 'err');
-  const orders = (data && data.orders) || [];
-  if (!orders.length) return toast('Aucune commande proposée', 'err');
-  window.__orders = orders;
-  const body = orders.map((o, i) => `
-    <div class="card" style="margin-bottom:10px">
-      <strong>${esc(o.fournisseur || 'Fournisseur')}</strong>
-      <div class="grid-list" style="margin:8px 0;gap:4px">${(o.lignes || []).map(l => `<div class="spread" style="font-size:14px"><span>${esc(l.produit)}</span><span class="pill p-muted">${esc(l.quantite)}</span></div>`).join('')}</div>
-      ${o.message ? `<div class="li-meta" style="white-space:pre-wrap;background:var(--surface-2);padding:9px;border-radius:9px">${esc(o.message)}</div>` : ''}
-      <div style="display:flex;gap:8px;margin-top:8px">
-        <button class="btn-sm btn-soft" onclick="copyOrder(${i})">Copier</button>
-        ${o.email ? `<a class="btn-sm btn" style="text-decoration:none;text-align:center;line-height:1.9" href="mailto:${esc(o.email)}?subject=${encodeURIComponent('Commande — ' + (o.fournisseur || ''))}&body=${encodeURIComponent(o.message || '')}">Envoyer par email</a>` : ''}
-      </div>
-    </div>`).join('');
-  sheet('Commandes proposées', body, null);
+/* --- À commander (liste todo, groupée par fournisseur) --- */
+function scrCommandes() {
+  const deja = new Set(DB.commandes.map(c => (c.produit || '').toLowerCase()));
+  const aAjouter = stockBas().filter(s => !deja.has(s.nom.toLowerCase()));
+  const groups = {};
+  DB.commandes.forEach(c => { (groups[c.fournisseur || 'Autre'] = groups[c.fournisseur || 'Autre'] || []).push(c); });
+  const done = DB.commandes.filter(c => c.fait).length;
+  return `
+    ${aAjouter.length ? `<button class="btn" style="margin-bottom:12px" onclick="addAlertsToCommandes()">➕ Ajouter les ${aAjouter.length} produit(s) sous le seuil</button>` : ''}
+    ${DB.commandes.length === 0
+      ? empty(I.box, 'Rien à commander', 'Ajoute les produits sous le seuil, ou saisis-en un ci-dessous.')
+      : Object.keys(groups).sort().map(f => `
+        <div class="eyebrow">${esc(f)} <span class="pill p-muted">${groups[f].filter(c => !c.fait).length} à commander</span></div>
+        <div class="card" style="padding:2px 14px">
+          ${groups[f].map(c => `
+            <div class="check ${c.fait ? 'done' : ''}">
+              <input type="checkbox" ${c.fait ? 'checked' : ''} onchange="toggleCommande('${c.id}')">
+              <label>${esc(c.produit)}${c.qte ? ` · <span class="muted">${esc(c.qte)}</span>` : ''}</label>
+              <button class="icon-btn" onclick="delItem('commandes','${c.id}')">${I.trash}</button>
+            </div>`).join('')}
+        </div>`).join('')}
+    <div style="display:flex;gap:8px;margin-top:14px">
+      <input id="cmdNew" placeholder="Ajouter un produit…" style="flex:1;padding:11px 12px;border:1px solid var(--line);border-radius:11px;background:var(--surface-2);color:var(--ink);font-size:15px" onkeydown="if(event.key==='Enter')addCommande()">
+      <button class="btn btn-sm" onclick="addCommande()">Ajouter</button>
+    </div>
+    ${done ? `<button class="btn btn-soft" style="margin-top:10px" onclick="clearDoneCommandes()">Retirer les ${done} coché(s)</button>` : ''}`;
 }
-function copyOrder(i) {
-  const o = (window.__orders || [])[i]; if (!o) return;
-  const txt = o.message || (o.lignes || []).map(l => l.quantite + ' — ' + l.produit).join('\n');
-  if (navigator.clipboard) navigator.clipboard.writeText(txt);
-  toast('Commande copiée', 'ok');
+function addAlertsToCommandes() {
+  const deja = new Set(DB.commandes.map(c => (c.produit || '').toLowerCase()));
+  let n = 0;
+  stockBas().forEach(s => {
+    if (deja.has(s.nom.toLowerCase())) return;
+    const q = Math.max(0, Math.round((s.seuil * 2 - s.quantite) * 10) / 10);
+    DB.commandes.push({ id: uid(), produit: s.nom, fournisseur: fournisseurNom(s.fournisseurId), qte: q ? q + ' ' + s.unite : '', fait: false });
+    n++;
+  });
+  save(); render(); toast(n ? `${n} produit(s) ajouté(s)` : 'Déjà dans la liste', 'ok');
 }
+function addCommande() {
+  const i = $('#cmdNew'); const v = (i && i.value || '').trim(); if (!v) return;
+  DB.commandes.push({ id: uid(), produit: v, fournisseur: 'Autre', qte: '', fait: false });
+  save(); render();
+}
+function toggleCommande(id) { const c = DB.commandes.find(x => x.id === id); if (c) { c.fait = !c.fait; save(); render(); } }
+function clearDoneCommandes() { DB.commandes = DB.commandes.filter(c => !c.fait); save(); render(); toast('Liste nettoyée', 'ok'); }
 
 /* --- Scan ticket par IA (vision) --- */
 function handleScanFileAI(input) { const f = input.files && input.files[0]; if (f) startOcrAI(f); }
@@ -1058,7 +1075,7 @@ function filterList(q) {
 }
 
 function delItem(collection, id) {
-  const labels = { stocks: 'ce produit', fournisseurs: 'ce fournisseur', vins: 'cette référence', staff: 'cet employé', planning: 'ce service', menus: 'cette ligne', comm: 'ce message', notes: 'cette note' };
+  const labels = { stocks: 'ce produit', fournisseurs: 'ce fournisseur', vins: 'cette référence', staff: 'cet employé', planning: 'ce service', menus: 'cette ligne', commandes: 'cette ligne', comm: 'ce message', notes: 'cette note' };
   if (!confirm(`Supprimer ${labels[collection] || 'cet élément'} ?`)) return;
   DB[collection] = DB[collection].filter(x => x.id !== id); save(); render(); toast('Supprimé');
 }
@@ -1128,6 +1145,7 @@ const SCREENS = {
   communication: { title: 'Salle ↔ Cuisine', tab: 'plus', back: 'plus', render: scrCommunication },
   planning:      { title: 'Planning équipe', tab: 'plus', back: 'plus', render: scrPlanning },
   fournisseurs:  { title: 'Fournisseurs', tab: 'plus', back: 'plus', render: scrFournisseurs, fab: 'editFournisseur' },
+  commandes:     { title: 'À commander', tab: 'plus', back: 'plus', render: scrCommandes },
   checklists:    { title: 'Checklists', tab: 'plus', back: 'plus', render: scrChecklists },
   notes:         { title: 'Notes & consignes', tab: 'plus', back: 'plus', render: scrNotes, fab: 'editNote' },
   assistant:     { title: 'Assistant IA', tab: 'plus', back: 'plus', render: scrAssistant },
@@ -1239,6 +1257,6 @@ Object.assign(window, {
   exportData, toggleTheme, closeSheet, submitSheet, $,
   openScan, resetScan, handleScanFile, handleScanFileAI, scanManual, analyzeManual,
   setScanQty, setScanTarget, removeScanLine, applyScan,
-  askAssistant, aiOrders, copyOrder,
+  askAssistant, addAlertsToCommandes, addCommande, toggleCommande, clearDoneCommandes,
   cloudPinLogin, gateSkip, gateShow, cloudLogout,
 });
