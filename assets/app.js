@@ -496,7 +496,13 @@ function planningCalendarView() {
       <strong>Semaine du ${label}</strong>
       <button class="icon-btn" onclick="planningWeekShift(7)" aria-label="Semaine suivante">›</button>
     </div>
-    <button class="btn" style="margin-bottom:14px" onclick="generatePlanning()">✨ Générer le planning</button>
+    <button class="btn" style="margin-bottom:12px" onclick="generatePlanning()">✨ Générer le planning</button>
+    <div class="card" style="margin-bottom:14px">
+      <strong>🤖 Assistant IA</strong>
+      <p class="muted" style="font-size:12.5px;margin:4px 0 8px">Donne tes consignes en langage normal ; l'IA génère la semaine.</p>
+      <textarea id="aiInstr" placeholder="Ex. Julien pas le samedi · équilibrer les week-ends · Lucas 3 soirs max" style="width:100%;min-height:62px;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2);color:var(--ink);font-size:14px;font-family:inherit"></textarea>
+      <button class="btn btn-soft" style="margin-top:8px" onclick="planningAI()">Générer avec l'IA</button>
+    </div>
     ${DB.staff.length === 0 ? `<div class="card muted" style="font-size:13px">Ajoute d'abord ton personnel (onglet Personnel) et leurs disponibilités.</div>` : days.map(dayCard).join('')}`;
 }
 function dayCard(date) {
@@ -579,6 +585,33 @@ function addAssignment(date, service, cat) {
   });
 }
 function removeAssignment(id) { DB.planning = DB.planning.filter(p => p.id !== id); save(); render(); }
+async function planningAI() {
+  if (!window.Cloud || !window.Cloud.isConnected()) return toast('Connecte-toi avec le code pour utiliser l\'IA', 'err');
+  if (!DB.staff.length) return toast('Ajoute d\'abord du personnel', 'err');
+  const instruction = (($('#aiInstr') && $('#aiInstr').value) || '').trim();
+  const days = weekDays(planningWeek).map(d => ({ date: d, jour: WEEKDAYS[wdIndex(d)] }));
+  const staff = DB.staff.map(s => ({ id: s.id, nom: s.nom, pole: s.categorie, joursMax: s.joursMax, dispo: (s.dispo || []).map((x, i) => ({ jour: WEEKDAYS[i], midi: !!x.midi, soir: !!x.soir })) }));
+  toast('L\'IA prépare le planning…');
+  const { data, error } = await window.Cloud.aiPlan({ staff, besoins: DB.besoins, days, instruction });
+  if (error) return toast('IA indisponible : ' + (error.message || 'erreur'), 'err');
+  const asg = (data && Array.isArray(data.assignments)) ? data.assignments : [];
+  if (data && data.error) return toast('IA : ' + String(data.error).slice(0, 60), 'err');
+  const weekISO = weekDays(planningWeek);
+  DB.planning = DB.planning.filter(p => !weekISO.includes(p.date));
+  let applied = 0;
+  asg.forEach(a => {
+    const s = DB.staff.find(e => e.id === a.employeId);
+    if (!s || !weekISO.includes(a.date) || !(a.service === 'midi' || a.service === 'soir')) return;
+    const wd = wdIndex(a.date);
+    if (!(s.dispo && s.dispo[wd] && s.dispo[wd][a.service])) return; // on ne garde que le disponible
+    if (DB.planning.some(p => p.date === a.date && p.service === a.service && p.employeId === s.id)) return;
+    const b = DB.besoins[a.service] || { debut: '', fin: '' };
+    DB.planning.push({ id: uid(), date: a.date, service: a.service, employeId: s.id, nom: s.nom, categorie: s.categorie, role: s.role, debut: b.debut, fin: b.fin });
+    applied++;
+  });
+  save(); render();
+  toast(applied ? `Planning IA appliqué (${applied}) 🤖✨` : 'L\'IA n\'a proposé aucune affectation valide', applied ? 'ok' : 'err');
+}
 
 /* --- Personnel --- */
 function planningStaffView() {
@@ -1086,7 +1119,7 @@ Object.assign(window, {
   go, editStock, quickRestock, editVin, quickVin, editMenuLine,
   editFournisseur, addComm, toggleComm, setCheckTab, toggleCheck,
   setPlanningTab, planningWeekShift, generatePlanning, addAssignment, removeAssignment,
-  editStaff, setBesoin, setBesoinActif,
+  editStaff, setBesoin, setBesoinActif, planningAI,
   addCheck, delCheck, resetCheck, editNote, pinNote, delItem, filterList,
   exportData, toggleTheme, closeSheet, submitSheet, $,
   openScan, resetScan, handleScanFile, scanManual, analyzeManual,
