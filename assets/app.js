@@ -478,24 +478,27 @@ let planningTab = 'calendrier';
 let planningWeek = null;
 
 function scrPlanning() {
-  if (!planningWeek) planningWeek = mondayOf(todayISO());
+  if (!planningWeek) planningWeek = todayISO(); // fenêtre de 7 jours à partir d'aujourd'hui
   const seg = `<div class="segment">${[['calendrier', 'Calendrier'], ['personnel', 'Personnel'], ['besoins', 'Besoins']].map(([k, l]) => `<button class="${planningTab === k ? 'on' : ''}" onclick="setPlanningTab('${k}')">${l}</button>`).join('')}</div>`;
   const body = planningTab === 'personnel' ? planningStaffView() : planningTab === 'besoins' ? planningBesoinsView() : planningCalendarView();
   return seg + body;
 }
 function setPlanningTab(k) { planningTab = k; render(); }
 function planningWeekShift(n) { planningWeek = addDays(planningWeek, n); render(); }
+function planningToday() { planningWeek = todayISO(); render(); }
 
 /* --- Calendrier --- */
 function planningCalendarView() {
   const days = weekDays(planningWeek);
-  const label = new Date(planningWeek).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' });
+  const fmt = (iso) => new Date(iso).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' });
+  const label = `${fmt(days[0])} → ${fmt(days[6])}`;
   return `
-    <div class="spread" style="margin-bottom:12px">
-      <button class="icon-btn" onclick="planningWeekShift(-7)" aria-label="Semaine précédente">‹</button>
-      <strong>Semaine du ${label}</strong>
-      <button class="icon-btn" onclick="planningWeekShift(7)" aria-label="Semaine suivante">›</button>
+    <div class="spread" style="margin-bottom:6px">
+      <button class="icon-btn" onclick="planningWeekShift(-7)" aria-label="7 jours avant">‹</button>
+      <strong>${label}</strong>
+      <button class="icon-btn" onclick="planningWeekShift(7)" aria-label="7 jours après">›</button>
     </div>
+    <div style="text-align:center;margin-bottom:12px"><button class="btn-sm btn-soft" onclick="planningToday()">Aujourd'hui</button></div>
     <button class="btn" style="margin-bottom:12px" onclick="generatePlanning()">✨ Générer le planning</button>
     <div class="card" style="margin-bottom:14px">
       <strong>🤖 Assistant IA</strong>
@@ -1118,7 +1121,7 @@ window.__jero = {
 Object.assign(window, {
   go, editStock, quickRestock, editVin, quickVin, editMenuLine,
   editFournisseur, addComm, toggleComm, setCheckTab, toggleCheck,
-  setPlanningTab, planningWeekShift, generatePlanning, addAssignment, removeAssignment,
+  setPlanningTab, planningWeekShift, planningToday, generatePlanning, addAssignment, removeAssignment,
   editStaff, setBesoin, setBesoinActif, planningAI,
   addCheck, delCheck, resetCheck, editNote, pinNote, delItem, filterList,
   exportData, toggleTheme, closeSheet, submitSheet, $,
