@@ -71,6 +71,7 @@ function save() {
   if (window.Cloud) window.Cloud.onSave(DB);
 }
 let cloudState = { enabled: false, connected: false, email: null };
+let loginStep = { sent: false, email: '' };
 
 /* ---------- Données de démonstration ---------- */
 function seed() {
@@ -396,9 +397,14 @@ function scrPlus() {
     ${cloudState.connected
       ? `<div class="card"><div class="spread"><div><strong>Connecté ☁️</strong><div class="muted" style="font-size:13px">${esc(cloudState.email || '')}</div></div><button class="btn-sm btn-soft" onclick="cloudLogout()">Se déconnecter</button></div><div class="muted" style="font-size:12.5px;margin-top:10px">Tes données sont partagées en temps réel avec l'équipe.</div></div>`
       : cloudState.enabled
-        ? `<div class="card"><strong>Se connecter</strong><p class="muted" style="font-size:13px;margin:6px 0 10px">Reçois un lien de connexion par email. Seuls les emails autorisés ont accès.</p>
-           <input id="cloudEmail" type="email" inputmode="email" placeholder="ton@email.fr" style="width:100%;padding:12px 13px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2);color:var(--ink);font-size:16px" onkeydown="if(event.key==='Enter')cloudLogin()">
-           <button class="btn" style="margin-top:10px" onclick="cloudLogin()">Recevoir le lien de connexion</button></div>`
+        ? (loginStep.sent
+          ? `<div class="card"><strong>Entre ton code</strong><p class="muted" style="font-size:13px;margin:6px 0 10px">Un code à 6 chiffres a été envoyé à <b>${esc(loginStep.email)}</b>. Regarde tes emails (et les spams).</p>
+             <input id="cloudCode" inputmode="numeric" maxlength="6" autocomplete="one-time-code" placeholder="123456" style="width:100%;padding:12px 13px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2);color:var(--ink);font-size:22px;letter-spacing:6px;text-align:center" onkeydown="if(event.key==='Enter')cloudVerify()">
+             <button class="btn" style="margin-top:10px" onclick="cloudVerify()">Valider le code</button>
+             <div style="display:flex;gap:10px;margin-top:10px"><button class="btn-sm btn-soft" style="flex:1" onclick="cloudLogin()">Renvoyer</button><button class="btn-sm btn-soft" style="flex:1" onclick="cloudResetLogin()">Changer d'email</button></div></div>`
+          : `<div class="card"><strong>Se connecter</strong><p class="muted" style="font-size:13px;margin:6px 0 10px">Reçois un code de connexion par email. Seuls les emails autorisés ont accès.</p>
+             <input id="cloudEmail" type="email" inputmode="email" placeholder="ton@email.fr" value="${esc(loginStep.email)}" style="width:100%;padding:12px 13px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2);color:var(--ink);font-size:16px" onkeydown="if(event.key==='Enter')cloudLogin()">
+             <button class="btn" style="margin-top:10px" onclick="cloudLogin()">Recevoir le code</button></div>`)
         : `<div class="card muted" style="font-size:13px">Mode hors-ligne — données enregistrées sur cet appareil. La synchronisation entre appareils s'active sur la version en ligne (hébergée).</div>`}
 
     <div class="eyebrow" style="margin-top:22px">Données & sauvegarde</div>
@@ -878,13 +884,24 @@ document.addEventListener('DOMContentLoaded', () => {
 
 /* ---------- Connexion / synchronisation ---------- */
 async function cloudLogin() {
-  const el = $('#cloudEmail'); const email = (el && el.value || '').trim();
+  const el = $('#cloudEmail');
+  const email = ((el && el.value) || loginStep.email || '').trim();
   if (!email || !/.+@.+\..+/.test(email)) return toast('Entre un email valide', 'err');
   const err = await window.Cloud.signIn(email);
-  if (err) toast('Erreur : ' + err.message, 'err');
-  else toast('Lien envoyé — regarde tes emails 📩', 'ok');
+  if (err) return toast('Erreur : ' + err.message, 'err');
+  loginStep = { sent: true, email };
+  toast('Code envoyé — regarde tes emails 📩', 'ok');
+  render();
 }
-function cloudLogout() { window.Cloud.signOut(); toast('Déconnecté'); }
+async function cloudVerify() {
+  const code = (($('#cloudCode') && $('#cloudCode').value) || '').replace(/\s/g, '');
+  if (code.length < 6) return toast('Entre le code à 6 chiffres', 'err');
+  const err = await window.Cloud.verifyCode(loginStep.email, code);
+  if (err) toast('Code invalide ou expiré', 'err');
+  // Succès : géré par onAuthStateChange -> synchro -> écran « Connecté »
+}
+function cloudResetLogin() { loginStep = { sent: false, email: '' }; render(); }
+function cloudLogout() { window.Cloud.signOut(); loginStep = { sent: false, email: '' }; toast('Déconnecté'); }
 
 /* Pont avec la couche cloud (cloud.js) */
 window.__jero = {
@@ -907,5 +924,5 @@ Object.assign(window, {
   exportData, toggleTheme, closeSheet, submitSheet, $,
   openScan, resetScan, handleScanFile, scanManual, analyzeManual,
   setScanQty, setScanTarget, removeScanLine, applyScan,
-  cloudLogin, cloudLogout,
+  cloudLogin, cloudVerify, cloudResetLogin, cloudLogout,
 });
