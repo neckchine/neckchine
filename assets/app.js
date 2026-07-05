@@ -52,7 +52,7 @@ function load() {
   catch (e) { console.warn(e); }
   return seed();
 }
-/* Migration : ancienne clé « plats » -> « menus » (menu du jour) */
+/* Migration : ancienne clé « plats » -> « menus » (menu du jour) + planning auto */
 function normalize(db) {
   if (!db.menus) {
     db.menus = Array.isArray(db.plats)
@@ -60,7 +60,30 @@ function normalize(db) {
       : [];
   }
   delete db.plats;
+  if (!Array.isArray(db.staff)) db.staff = seedStaff();
+  if (!db.besoins) db.besoins = defaultBesoins();
+  if (!Array.isArray(db.planning)) db.planning = [];
+  // Ancien format de planning (sans « service ») -> on repart propre
+  db.planning = db.planning.filter(p => p && p.service && p.employeId);
   return db;
+}
+
+/* ---------- Données planning (personnel + besoins) ---------- */
+function mkDispo(pairs) { return pairs.map(([m, s]) => ({ midi: !!m, soir: !!s })); }
+function seedStaff() {
+  return [
+    { id: 'e1', nom: 'Julien Roy', categorie: 'Cuisine', role: 'Chef de cuisine', joursMax: 5, dispo: mkDispo([[1,1],[1,1],[1,1],[1,1],[1,1],[0,0],[0,0]]) },
+    { id: 'e2', nom: 'Marta Sur', categorie: 'Cuisine', role: 'Commis', joursMax: 5, dispo: mkDispo([[1,1],[1,1],[1,1],[1,1],[1,1],[0,0],[0,0]]) },
+    { id: 'e3', nom: 'Amina Chef', categorie: 'Salle', role: 'Cheffe de rang', joursMax: 5, dispo: mkDispo([[0,0],[1,1],[1,1],[1,1],[1,1],[1,1],[0,0]]) },
+    { id: 'e4', nom: 'Lucas Petit', categorie: 'Salle', role: 'Serveur', joursMax: 4, dispo: mkDispo([[0,0],[0,0],[0,1],[0,1],[0,1],[0,1],[0,1]]) },
+    { id: 'e5', nom: 'Théo Bar', categorie: 'Bar', role: 'Barman', joursMax: 5, dispo: mkDispo([[0,0],[0,0],[0,0],[0,1],[1,1],[1,1],[0,1]]) },
+  ];
+}
+function defaultBesoins() {
+  return {
+    midi: { actif: true, debut: '11:00', fin: '15:00', Cuisine: 1, Salle: 2, Bar: 0 },
+    soir: { actif: true, debut: '18:00', fin: '23:30', Cuisine: 2, Salle: 2, Bar: 1 },
+  };
 }
 const MENU_CATS = ['Entrée', 'Plat', 'Suggestion', 'Dessert'];
 const catLabel = (c) => ({ 'Entrée': 'Entrées', 'Plat': 'Plats', 'Dessert': 'Desserts', 'Suggestion': 'Suggestions' }[c] || c);
@@ -97,11 +120,9 @@ function seed() {
       { id: 'v3', nom: 'Champagne Brut', domaine: 'Pol Roger', type: 'Effervescent', millesime: 0, region: 'Champagne', quantite: 30, seuil: 12, emplacement: 'Cave froide', prixAchat: 34, prixVente: 89 },
       { id: 'v4', nom: 'Sancerre', domaine: 'Henri Bourgeois', type: 'Blanc', millesime: 2022, region: 'Loire', quantite: 9, seuil: 6, emplacement: 'Cave A — casier 1', prixAchat: 16, prixVente: 42 },
     ],
-    planning: [
-      { id: 'p1', employe: 'Julien Roy', role: 'Chef de cuisine', jour: t, debut: '09:00', fin: '15:00' },
-      { id: 'p2', employe: 'Amina Chef', role: 'Cheffe de rang', jour: t, debut: '11:00', fin: '16:00' },
-      { id: 'p3', employe: 'Lucas Petit', role: 'Serveur', jour: t, debut: '18:00', fin: '23:30' },
-    ],
+    staff: seedStaff(),
+    besoins: defaultBesoins(),
+    planning: [],
     menus: [
       { id: 'd1', date: t, categorie: 'Entrée', nom: 'Velouté de potimarron', description: 'Crème légère & graines torréfiées', prix: 9 },
       { id: 'd2', date: t, categorie: 'Plat', nom: 'Suprême de volaille, jus au thym', description: 'Écrasé de pommes de terre à l\'huile d\'olive', prix: 19 },
@@ -149,7 +170,8 @@ const fournisseurNom = (id) => (DB.fournisseurs.find(f => f.id === id) || {}).no
 function scrAccueil() {
   const sb = stockBas(), vb = vinBas(), co = commOuverts();
   const menuJour = DB.menus.filter(m => m.date === todayISO());
-  const planningJour = DB.planning.filter(p => p.jour === todayISO()).sort((a, b) => a.debut.localeCompare(b.debut));
+  const planningJour = DB.planning.filter(p => p.date === todayISO()).sort((a, b) => a.debut.localeCompare(b.debut));
+  const auService = new Set(planningJour.map(p => p.employeId)).size;
   const valeurCave = DB.vins.reduce((t, v) => t + v.quantite * (v.prixAchat || 0), 0);
   const alertes = sb.length + vb.length;
   const chkO = DB.checklists.ouverture, chkF = DB.checklists.fermeture;
@@ -176,8 +198,8 @@ function scrAccueil() {
     <div class="stat-grid">
       <button class="stat" onclick="go('cave')" style="text-align:left;cursor:pointer;border:1px solid var(--line)">
         <div class="v">${eur(valeurCave)}</div><div class="l">Valeur de la cave</div></button>
-      <button class="stat" onclick="go('plus')" style="text-align:left;cursor:pointer;border:1px solid var(--line)">
-        <div class="v">${planningJour.length}</div><div class="l">Au service aujourd'hui</div></button>
+      <button class="stat" onclick="go('planning')" style="text-align:left;cursor:pointer;border:1px solid var(--line)">
+        <div class="v">${auService}</div><div class="l">Au service aujourd'hui</div></button>
     </div>
 
     <div class="eyebrow" style="margin-top:20px">Menu du jour <a onclick="go('menu')">${menuJour.length ? 'Modifier' : 'Écrire'}</a></div>
@@ -189,10 +211,10 @@ function scrAccueil() {
           <div class="r-main"><div class="r-title">Aucun menu pour aujourd'hui</div><div class="r-sub">Touchez pour l'écrire depuis la cuisine</div></div>
           <span class="chev">${I.chevron}</span></button>`}
 
-    ${planningJour.length ? `<div class="eyebrow" style="margin-top:20px">Équipe du jour</div>
+    ${planningJour.length ? `<div class="eyebrow" style="margin-top:20px">Équipe du jour <a onclick="go('planning')">Planning</a></div>
       <div class="rows">${planningJour.map(p => `
         <div class="row"><div class="r-ico">${I.calendar}</div>
-          <div class="r-main"><div class="r-title">${esc(p.employe)}</div><div class="r-sub">${esc(p.role)}</div></div>
+          <div class="r-main"><div class="r-title">${esc(p.nom)}</div><div class="r-sub">${esc(p.role || p.categorie)} · ${p.service === 'midi' ? 'Midi' : 'Soir'}</div></div>
           <span class="pill p-muted nowrap">${p.debut}–${p.fin}</span></div>`).join('')}</div>` : ''}
 
     <div class="eyebrow" style="margin-top:20px">Checklists <a onclick="go('checklists')">Ouvrir</a></div>
@@ -450,36 +472,176 @@ function addComm() {
 }
 function toggleComm(id) { const c = DB.comm.find(x => x.id === id); if (!c) return; c.resolu = !c.resolu; save(); render(); }
 
-/* ---------- Planning (#11) ---------- */
+/* ---------- Planning (#11) : calendrier + personnel + génération auto ---------- */
+const WEEKDAYS = ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'Dimanche'];
+const WEEKDAYS_SHORT = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
+const PLAN_CATS = ['Cuisine', 'Salle', 'Bar'];
+const SERVICES = [{ key: 'midi', label: 'Midi' }, { key: 'soir', label: 'Soir' }];
+const wdIndex = (iso) => (new Date(iso).getDay() + 6) % 7; // 0 = Lundi
+function addDays(iso, n) { const d = new Date(iso); d.setDate(d.getDate() + n); return d.toISOString().slice(0, 10); }
+function mondayOf(iso) { return addDays(iso, -wdIndex(iso)); }
+function weekDays(monday) { return Array.from({ length: 7 }, (_, i) => addDays(monday, i)); }
+
+let planningTab = 'calendrier';
+let planningWeek = null;
+
 function scrPlanning() {
-  const days = []; const base = new Date(todayISO());
-  for (let i = 0; i < 7; i++) { const d = new Date(base); d.setDate(base.getDate() + i); days.push(d.toISOString().slice(0, 10)); }
-  return days.map(day => {
-    const shifts = DB.planning.filter(p => p.jour === day).sort((a, b) => a.debut.localeCompare(b.debut));
-    return `<div class="eyebrow" style="text-transform:capitalize">${frDateLong(day)}${day === todayISO() ? ' <span class="pill p-wine">Aujourd\'hui</span>' : ''}</div>
-      ${shifts.length ? `<div class="rows">${shifts.map(p => `
-        <div class="row"><div class="r-ico">${I.calendar}</div>
-          <div class="r-main"><div class="r-title">${esc(p.employe)}</div><div class="r-sub">${esc(p.role)}</div></div>
-          <div class="r-right"><span class="pill p-muted nowrap">${p.debut}–${p.fin}</span>
-            <button class="icon-btn" onclick="editShift('${p.id}')">${I.edit}</button>
-            <button class="icon-btn" onclick="delItem('planning','${p.id}')">${I.trash}</button></div></div>`).join('')}</div>`
-        : '<p class="muted" style="padding:2px 4px 6px">Aucun service.</p>'}`;
-  }).join('');
+  if (!planningWeek) planningWeek = mondayOf(todayISO());
+  const seg = `<div class="segment">${[['calendrier', 'Calendrier'], ['personnel', 'Personnel'], ['besoins', 'Besoins']].map(([k, l]) => `<button class="${planningTab === k ? 'on' : ''}" onclick="setPlanningTab('${k}')">${l}</button>`).join('')}</div>`;
+  const body = planningTab === 'personnel' ? planningStaffView() : planningTab === 'besoins' ? planningBesoinsView() : planningCalendarView();
+  return seg + body;
 }
-function editShift(id) {
-  const p = id ? DB.planning.find(x => x.id === id) : { employe: '', role: 'Serveur', jour: todayISO(), debut: '11:00', fin: '15:00' };
-  sheet(id ? 'Modifier le service' : 'Nouveau service', `
-    ${fld('Employé', `<input id="m_emp" value="${esc(p.employe)}">`)}
-    ${fld('Poste', `<input id="m_role" value="${esc(p.role)}" list="roleL"><datalist id="roleL"><option>Chef de cuisine</option><option>Second de cuisine</option><option>Commis</option><option>Plongeur</option><option>Cheffe de rang</option><option>Serveur</option><option>Barman</option><option>Directeur</option></datalist>`)}
-    ${fld('Date', `<input id="m_jour" type="date" value="${esc(p.jour)}">`)}
-    <div class="form-row">${fld('Début', `<input id="m_deb" type="time" value="${esc(p.debut)}">`)}${fld('Fin', `<input id="m_fin" type="time" value="${esc(p.fin)}">`)}</div>
+function setPlanningTab(k) { planningTab = k; render(); }
+function planningWeekShift(n) { planningWeek = addDays(planningWeek, n); render(); }
+
+/* --- Calendrier --- */
+function planningCalendarView() {
+  const days = weekDays(planningWeek);
+  const label = new Date(planningWeek).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' });
+  return `
+    <div class="spread" style="margin-bottom:12px">
+      <button class="icon-btn" onclick="planningWeekShift(-7)" aria-label="Semaine précédente">‹</button>
+      <strong>Semaine du ${label}</strong>
+      <button class="icon-btn" onclick="planningWeekShift(7)" aria-label="Semaine suivante">›</button>
+    </div>
+    <button class="btn" style="margin-bottom:14px" onclick="generatePlanning()">✨ Générer le planning</button>
+    ${DB.staff.length === 0 ? `<div class="card muted" style="font-size:13px">Ajoute d'abord ton personnel (onglet Personnel) et leurs disponibilités.</div>` : days.map(dayCard).join('')}`;
+}
+function dayCard(date) {
+  const wd = wdIndex(date), isToday = date === todayISO();
+  const services = SERVICES.filter(s => DB.besoins[s.key] && DB.besoins[s.key].actif);
+  return `<div class="card" style="margin-bottom:10px${isToday ? ';border-left:3px solid var(--wine)' : ''}">
+    <div class="spread" style="margin-bottom:6px"><strong style="text-transform:capitalize">${WEEKDAYS[wd]} ${new Date(date).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })}</strong>${isToday ? '<span class="pill p-wine">Auj.</span>' : ''}</div>
+    ${services.map(svc => {
+      const b = DB.besoins[svc.key];
+      const rows = PLAN_CATS.map(cat => {
+        const need = Number(b[cat]) || 0;
+        const assigned = DB.planning.filter(p => p.date === date && p.service === svc.key && p.categorie === cat);
+        if (need === 0 && assigned.length === 0) return '';
+        const manque = Math.max(0, need - assigned.length);
+        return `<div style="margin:5px 0"><span class="muted" style="font-size:11.5px">${cat}${need ? ` ${assigned.length}/${need}` : ''}</span>
+          <div class="tag-row" style="margin-top:3px">
+            ${assigned.map(a => `<span class="pill p-muted">${esc(a.nom)} <span onclick="removeAssignment('${a.id}')" style="cursor:pointer;opacity:.55;font-weight:700">✕</span></span>`).join('')}
+            <button class="pill p-wine" style="border:none;cursor:pointer" onclick="addAssignment('${date}','${svc.key}','${cat}')">＋</button>
+            ${manque ? `<span class="pill p-warn">manque ${manque}</span>` : ''}
+          </div></div>`;
+      }).join('');
+      return `<div style="margin-top:8px"><div style="font-weight:600;font-size:13px">${svc.label} · ${b.debut}–${b.fin}</div>${rows || '<span class="muted" style="font-size:12px">—</span>'}</div>`;
+    }).join('')}
+  </div>`;
+}
+function generatePlanning() {
+  if (!DB.staff.length) return toast('Ajoute d\'abord du personnel', 'err');
+  const days = weekDays(planningWeek);
+  DB.planning = DB.planning.filter(p => !days.includes(p.date)); // on régénère la semaine
+  const dayset = {}, total = {};
+  DB.staff.forEach(s => { dayset[s.id] = new Set(); total[s.id] = 0; });
+  for (const date of days) {
+    const wd = wdIndex(date);
+    for (const svc of SERVICES) {
+      const b = DB.besoins[svc.key];
+      if (!b || !b.actif) continue;
+      for (const cat of PLAN_CATS) {
+        const need = Number(b[cat]) || 0;
+        if (need <= 0) continue;
+        const cands = DB.staff.filter(s => s.categorie === cat
+          && s.dispo && s.dispo[wd] && s.dispo[wd][svc.key]
+          && !DB.planning.some(p => p.date === date && p.service === svc.key && p.employeId === s.id)
+          && (dayset[s.id].has(date) || dayset[s.id].size < (Number(s.joursMax) || 7)));
+        cands.sort((a, c) => total[a.id] - total[c.id] || a.nom.localeCompare(c.nom));
+        cands.slice(0, need).forEach(s => {
+          DB.planning.push({ id: uid(), date, service: svc.key, employeId: s.id, nom: s.nom, categorie: cat, role: s.role, debut: b.debut, fin: b.fin });
+          dayset[s.id].add(date); total[s.id]++;
+        });
+      }
+    }
+  }
+  save(); render();
+  const trous = countShortfalls(days);
+  toast(trous ? `Planning généré · ${trous} créneau(x) à compléter` : 'Planning généré ✨', trous ? '' : 'ok');
+}
+function countShortfalls(days) {
+  let n = 0;
+  for (const date of days) for (const svc of SERVICES) {
+    const b = DB.besoins[svc.key]; if (!b || !b.actif) continue;
+    for (const cat of PLAN_CATS) {
+      const need = Number(b[cat]) || 0; if (!need) continue;
+      const got = DB.planning.filter(p => p.date === date && p.service === svc.key && p.categorie === cat).length;
+      n += Math.max(0, need - got);
+    }
+  }
+  return n;
+}
+function addAssignment(date, service, cat) {
+  const wd = wdIndex(date), b = DB.besoins[service];
+  const list = DB.staff.filter(s => s.categorie === cat);
+  if (!list.length) return toast('Aucun employé en ' + cat, 'err');
+  const opts = list.map(s => { const ok = s.dispo && s.dispo[wd] && s.dispo[wd][service]; return `<option value="${s.id}">${esc(s.nom)}${ok ? '' : ' (indispo)'}</option>`; }).join('');
+  sheet(`Ajouter — ${cat} · ${SERVICES.find(x => x.key === service).label}`, `
+    ${fld('Employé', `<select id="a_emp">${opts}</select>`)}
+    <div class="form-row">${fld('Début', `<input id="a_deb" type="time" value="${b.debut}">`)}${fld('Fin', `<input id="a_fin" type="time" value="${b.fin}">`)}</div>
   `, () => {
-    const d = { employe: $('#m_emp').value.trim(), role: $('#m_role').value.trim(), jour: $('#m_jour').value, debut: $('#m_deb').value, fin: $('#m_fin').value };
-    if (!d.employe) return toast('Le nom est obligatoire', 'err'), false;
-    if (id) Object.assign(p, d); else DB.planning.push({ id: uid(), ...d });
-    save(); render(); toast('Service enregistré', 'ok');
+    const s = DB.staff.find(x => x.id === $('#a_emp').value); if (!s) return false;
+    DB.planning.push({ id: uid(), date, service, employeId: s.id, nom: s.nom, categorie: cat, role: s.role, debut: $('#a_deb').value, fin: $('#a_fin').value });
+    save(); render(); toast('Ajouté au planning', 'ok');
   });
 }
+function removeAssignment(id) { DB.planning = DB.planning.filter(p => p.id !== id); save(); render(); }
+
+/* --- Personnel --- */
+function planningStaffView() {
+  return `<button class="btn" style="margin-bottom:12px" onclick="editStaff()">+ Ajouter un employé</button>
+    ${DB.staff.map(s => `
+      <div class="tile">
+        <div class="tile-head"><div><div class="tile-title">${esc(s.nom)}</div><div class="tile-sub">${esc(s.role || s.categorie)} · ${esc(s.categorie)} · max ${s.joursMax} j/sem</div></div>
+          <div class="nowrap"><button class="icon-btn" onclick="editStaff('${s.id}')">${I.edit}</button><button class="icon-btn" onclick="delItem('staff','${s.id}')">${I.trash}</button></div></div>
+        <div class="tag-row" style="margin-top:10px">${WEEKDAYS_SHORT.map((d, i) => { const dd = s.dispo && s.dispo[i]; const on = dd && (dd.midi || dd.soir); const suf = dd ? (dd.midi && dd.soir ? ' M+S' : dd.midi ? ' M' : dd.soir ? ' S' : '') : ''; return `<span class="pill ${on ? 'p-ok' : 'p-muted'}" style="font-size:10.5px">${d}${suf}</span>`; }).join('')}</div>
+      </div>`).join('') || empty(I.calendar, 'Aucun employé', 'Ajoute ton personnel pour générer le planning.')}`;
+}
+function editStaff(id) {
+  const s = id ? DB.staff.find(x => x.id === id) : { nom: '', categorie: 'Salle', role: '', joursMax: 5, dispo: WEEKDAYS_SHORT.map(() => ({ midi: false, soir: false })) };
+  const dispo = (s.dispo && s.dispo.length === 7) ? s.dispo : WEEKDAYS_SHORT.map(() => ({ midi: false, soir: false }));
+  const grid = WEEKDAYS_SHORT.map((d, i) => `
+    <div style="display:flex;align-items:center;gap:14px;padding:5px 0;border-bottom:1px solid var(--line)">
+      <span style="width:40px;font-size:13.5px;font-weight:600">${d}</span>
+      <label style="display:flex;align-items:center;gap:6px;font-size:14px"><input type="checkbox" id="d_${i}_midi" ${dispo[i].midi ? 'checked' : ''}> Midi</label>
+      <label style="display:flex;align-items:center;gap:6px;font-size:14px"><input type="checkbox" id="d_${i}_soir" ${dispo[i].soir ? 'checked' : ''}> Soir</label>
+    </div>`).join('');
+  sheet(id ? 'Modifier l\'employé' : 'Nouvel employé', `
+    ${fld('Nom', `<input id="m_nom" value="${esc(s.nom)}">`)}
+    <div class="form-row">
+      ${fld('Pôle', `<select id="m_cat">${PLAN_CATS.map(c => `<option ${c === s.categorie ? 'selected' : ''}>${c}</option>`).join('')}</select>`)}
+      ${fld('Jours max / sem.', `<input id="m_max" type="number" inputmode="numeric" min="1" max="7" value="${s.joursMax}">`)}
+    </div>
+    ${fld('Poste (libellé)', `<input id="m_role" value="${esc(s.role)}" placeholder="Serveur, Commis, Barman…">`)}
+    <div class="field"><label>Disponibilités</label><div style="border:1px solid var(--line);border-radius:12px;padding:2px 12px">${grid}</div></div>
+  `, () => {
+    const nom = $('#m_nom').value.trim(); if (!nom) return toast('Le nom est obligatoire', 'err'), false;
+    const newDispo = WEEKDAYS_SHORT.map((_, i) => ({ midi: $('#d_' + i + '_midi').checked, soir: $('#d_' + i + '_soir').checked }));
+    const data = { nom, categorie: $('#m_cat').value, role: $('#m_role').value.trim(), joursMax: Number($('#m_max').value) || 5, dispo: newDispo };
+    if (id) Object.assign(s, data); else DB.staff.push({ id: uid(), ...data });
+    save(); render(); toast('Employé enregistré', 'ok');
+  });
+}
+
+/* --- Besoins --- */
+function planningBesoinsView() {
+  return `<p class="hint" style="margin-bottom:12px">Combien de personnes il faut par service et par pôle. Le générateur s'appuie dessus.</p>
+    ${SERVICES.map(svc => { const b = DB.besoins[svc.key]; return `
+      <div class="card" style="margin-bottom:12px">
+        <div class="spread"><strong>${svc.label}</strong>
+          <label style="font-size:13px;display:flex;align-items:center;gap:6px"><input type="checkbox" ${b.actif ? 'checked' : ''} onchange="setBesoinActif('${svc.key}',this.checked)"> service actif</label></div>
+        <div class="form-row" style="margin-top:10px">
+          ${fld('Début', `<input type="time" value="${b.debut}" onchange="setBesoin('${svc.key}','debut',this.value)">`)}
+          ${fld('Fin', `<input type="time" value="${b.fin}" onchange="setBesoin('${svc.key}','fin',this.value)">`)}
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px">
+          ${PLAN_CATS.map(cat => fld(cat, `<input type="number" inputmode="numeric" min="0" value="${b[cat] || 0}" onchange="setBesoin('${svc.key}','${cat}',this.value)">`)).join('')}
+        </div>
+      </div>`; }).join('')}`;
+}
+function setBesoin(svc, key, val) { DB.besoins[svc][key] = (key === 'debut' || key === 'fin') ? val : (Number(val) || 0); save(); }
+function setBesoinActif(svc, val) { DB.besoins[svc].actif = val; save(); render(); }
 
 /* ---------- Fournisseurs (#7) ---------- */
 function scrFournisseurs() {
@@ -759,7 +921,7 @@ function filterList(q) {
 }
 
 function delItem(collection, id) {
-  const labels = { stocks: 'ce produit', fournisseurs: 'ce fournisseur', vins: 'cette référence', planning: 'ce service', plats: 'ce plat', comm: 'ce message', notes: 'cette note' };
+  const labels = { stocks: 'ce produit', fournisseurs: 'ce fournisseur', vins: 'cette référence', staff: 'cet employé', planning: 'ce service', menus: 'cette ligne', comm: 'ce message', notes: 'cette note' };
   if (!confirm(`Supprimer ${labels[collection] || 'cet élément'} ?`)) return;
   DB[collection] = DB[collection].filter(x => x.id !== id); save(); render(); toast('Supprimé');
 }
@@ -825,7 +987,7 @@ const SCREENS = {
   menu:          { title: 'Menu du jour', tab: 'menu', render: scrMenu, fab: 'editMenuLine' },
   plus:          { title: 'Plus', tab: 'plus', render: scrPlus },
   communication: { title: 'Salle ↔ Cuisine', tab: 'plus', back: 'plus', render: scrCommunication },
-  planning:      { title: 'Planning équipe', tab: 'plus', back: 'plus', render: scrPlanning, fab: 'editShift' },
+  planning:      { title: 'Planning équipe', tab: 'plus', back: 'plus', render: scrPlanning },
   fournisseurs:  { title: 'Fournisseurs', tab: 'plus', back: 'plus', render: scrFournisseurs, fab: 'editFournisseur' },
   checklists:    { title: 'Checklists', tab: 'plus', back: 'plus', render: scrChecklists },
   notes:         { title: 'Notes & consignes', tab: 'plus', back: 'plus', render: scrNotes, fab: 'editNote' },
@@ -919,7 +1081,9 @@ window.__jero = {
 /* Exposition pour les onclick inline */
 Object.assign(window, {
   go, editStock, quickRestock, editVin, quickVin, editMenuLine,
-  editShift, editFournisseur, addComm, toggleComm, setCheckTab, toggleCheck,
+  editFournisseur, addComm, toggleComm, setCheckTab, toggleCheck,
+  setPlanningTab, planningWeekShift, generatePlanning, addAssignment, removeAssignment,
+  editStaff, setBesoin, setBesoinActif,
   addCheck, delCheck, resetCheck, editNote, pinNote, delItem, filterList,
   exportData, toggleTheme, closeSheet, submitSheet, $,
   openScan, resetScan, handleScanFile, scanManual, analyzeManual,

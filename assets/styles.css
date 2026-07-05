@@ -359,6 +359,7 @@ button.row:active { background: var(--surface-2); }
 .tile.nomatch { border-left: 3px solid var(--amber); }
 
 /* ---------- Divers ---------- */
+.tag-row { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
 .muted { color: var(--muted); }
 .grid-list { display: flex; flex-direction: column; gap: 10px; }
 .spread { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
