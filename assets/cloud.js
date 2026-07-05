@@ -12,6 +12,7 @@
   function toast(m, k) { if (window.toast) window.toast(m, k || ''); }
 
   function init() {
+    registerSW(); // enregistre le service worker (PWA + réception des notifs)
     if (!cfg.SUPABASE_URL || !window.supabase) { pushUI(); return; }
     client = window.supabase.createClient(cfg.SUPABASE_URL, cfg.SUPABASE_ANON_KEY, {
       auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true },
@@ -95,6 +96,44 @@
     return await client.functions.invoke('ai', { body: payload });
   }
 
+  /* ---- Notifications push ---- */
+  function registerSW() {
+    if (!('serviceWorker' in navigator)) return Promise.resolve(null);
+    return navigator.serviceWorker.register('sw.js').catch((e) => { console.warn('SW', e); return null; });
+  }
+  function urlB64ToUint8(base64) {
+    const pad = '='.repeat((4 - base64.length % 4) % 4);
+    const b64 = (base64 + pad).replace(/-/g, '+').replace(/_/g, '/');
+    const raw = atob(b64); const arr = new Uint8Array(raw.length);
+    for (let i = 0; i < raw.length; i++) arr[i] = raw.charCodeAt(i);
+    return arr;
+  }
+  async function enablePush() {
+    if (!client || !session) return { error: 'Connecte-toi avec le code d\'abord' };
+    if (!('serviceWorker' in navigator) || !('PushManager' in window)) return { error: 'Notifications non supportées ici. Sur iPhone : ajoute l\'app à l\'écran d\'accueil puis réessaie.' };
+    let perm = Notification.permission;
+    if (perm !== 'granted') perm = await Notification.requestPermission();
+    if (perm !== 'granted') return { error: 'Permission refusée' };
+    const reg = (await navigator.serviceWorker.getRegistration()) || (await registerSW());
+    if (!reg) return { error: 'Service worker indisponible' };
+    await navigator.serviceWorker.ready;
+    let sub = await reg.pushManager.getSubscription();
+    if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlB64ToUint8(cfg.VAPID_PUBLIC) });
+    const j = sub.toJSON();
+    const { error } = await client.from('push_subs').upsert({ endpoint: j.endpoint, sub: j });
+    if (error) return { error: error.message };
+    return { ok: true };
+  }
+  async function pushSend(title, body) {
+    if (!client || !session) return;
+    try { await client.functions.invoke('push', { body: { task: 'send', title, body } }); } catch (e) { console.warn('push', e); }
+  }
+  async function pushTest() {
+    if (!client || !session) return { error: 'Non connecté' };
+    try { const { data, error } = await client.functions.invoke('push', { body: { task: 'test' } }); return error ? { error: error.message } : (data || { ok: true }); }
+    catch (e) { return { error: String(e) }; }
+  }
+
   function pushUI() {
     if (window.__jero && window.__jero.onCloudState) {
       window.__jero.onCloudState({
@@ -109,6 +148,7 @@
   window.Cloud = {
     onSave(state) { if (!session) return; clearTimeout(pushTimer); pushTimer = setTimeout(() => push(state), 400); },
     signIn, verifyCode, signInWithPin, signOut, aiPlan, ai,
+    enablePush, pushSend, pushTest,
     isConnected: () => !!session,
   };
 

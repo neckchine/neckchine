@@ -274,8 +274,10 @@ function editStock(id) {
   `, () => {
     const d = { nom: $('#m_nom').value.trim(), categorie: $('#m_cat').value.trim(), unite: $('#m_unite').value, quantite: +$('#m_qte').value, seuil: +$('#m_seuil').value, fournisseurId: $('#m_four').value };
     if (!d.nom) return toast('Le nom est obligatoire', 'err'), false;
+    const wasLow = id ? (Number(s.quantite) <= Number(s.seuil)) : true; // nouveaux produits : pas de notif à la création
     if (id) Object.assign(s, d); else DB.stocks.push({ id: uid(), ...d });
     save(); render(); toast('Produit enregistré', 'ok');
+    if (!wasLow && d.quantite <= d.seuil) notify('📦 Stock bas', `${d.nom} : ${d.quantite} ${d.unite} (seuil ${d.seuil})`);
   });
 }
 function quickRestock(id) {
@@ -394,6 +396,7 @@ function editMenuLine(id) {
     if (!d.nom) return toast('L\'intitulé est obligatoire', 'err'), false;
     if (id) Object.assign(m, d); else DB.menus.push({ id: uid(), ...d });
     save(); render(); toast('Menu mis à jour', 'ok');
+    notify('🍽️ Menu du jour', `${d.categorie} : ${d.nom}`);
   });
 }
 
@@ -424,6 +427,16 @@ function scrPlus() {
       : cloudState.enabled
         ? `<div class="card"><strong>Accès par code</strong><p class="muted" style="font-size:13px;margin:6px 0 10px">Connecte-toi avec le code d'équipe pour synchroniser les données sur tous les appareils.</p><button class="btn" onclick="gateShow()">🔒 Entrer le code</button></div>`
         : `<div class="card muted" style="font-size:13px">Mode hors-ligne — données enregistrées sur cet appareil. La synchronisation entre appareils s'active sur la version en ligne (hébergée).</div>`}
+
+    <div class="eyebrow" style="margin-top:22px">Notifications</div>
+    <div class="card">
+      <p class="muted" style="font-size:13px;margin:0 0 10px">Reçois une alerte pour : nouveau menu du jour, plat en 86, stock sous le seuil, et le rappel de scan du soir (23h · dimanche 15h).</p>
+      <div style="display:flex;gap:8px">
+        <button class="btn" style="flex:1" onclick="enableNotifs()">🔔 Activer</button>
+        <button class="btn btn-soft" style="flex:1" onclick="testNotifs()">Tester</button>
+      </div>
+      <p class="hint" style="margin:10px 0 0">📱 iPhone : d'abord « Partager → Ajouter à l'écran d'accueil », ouvre l'app depuis l'icône, puis Active.</p>
+    </div>
 
     <div class="eyebrow" style="margin-top:22px">Données & sauvegarde</div>
     <div class="rows">
@@ -463,8 +476,11 @@ function commRow(c, done = false) {
 }
 function addComm() {
   const texte = $('#c_texte').value.trim(); if (!texte) return toast('Écrivez un message', 'err');
-  DB.comm.push({ id: uid(), type: $('#c_type').value, texte, auteur: $('#c_auteur').value, ts: Date.now(), resolu: false });
+  const type = $('#c_type').value, auteur = $('#c_auteur').value;
+  DB.comm.push({ id: uid(), type, texte, auteur, ts: Date.now(), resolu: false });
   save(); render(); toast('Message envoyé', 'ok');
+  if (type === '86') notify('⛔ 86 / manque', texte);
+  else notify('💬 Salle ↔ Cuisine', `${auteur} : ${texte}`);
 }
 function toggleComm(id) { const c = DB.comm.find(x => x.id === id); if (!c) return; c.resolu = !c.resolu; save(); render(); }
 
@@ -928,16 +944,21 @@ function setScanQty(i, v) { if (scan.lines[i]) scan.lines[i].qty = Math.max(0, +
 function setScanTarget(i, v) { if (scan.lines[i]) scan.lines[i].target = v; }
 function removeScanLine(i) { scan.lines.splice(i, 1); render(); }
 function applyScan() {
-  let ok = 0, skip = 0;
+  let ok = 0, skip = 0; const lowNames = [];
   scan.lines.forEach(l => {
     if (!l.target || !l.qty) { skip++; return; }
     const [kind, id] = l.target.split(':');
     const coll = kind === 'cave' ? DB.vins : DB.stocks;
     const it = coll.find(x => x.id === id);
-    if (it) { it.quantite = Math.max(0, +it.quantite - +l.qty); ok++; } else skip++;
+    if (it) {
+      const wasLow = Number(it.quantite) <= Number(it.seuil);
+      it.quantite = Math.max(0, +it.quantite - +l.qty); ok++;
+      if (!wasLow && it.quantite <= it.seuil) lowNames.push(it.nom);
+    } else skip++;
   });
   if (!ok) return toast('Aucune ligne reliée à un article', 'err');
   save();
+  if (lowNames.length) notify('📦 Stock bas après scan', lowNames.join(', '));
   toast(`${ok} article(s) mis à jour${skip ? ` · ${skip} ignoré(s)` : ''}`, 'ok');
   scan = { phase: 'idle', progress: 0, lines: [] };
   go('stocks');
@@ -1234,6 +1255,22 @@ function gateSkip() { gateDismissed = true; updateGate(); toast('Mode hors-ligne
 function gateShow() { gateDismissed = false; updateGate(); }
 function cloudLogout() { window.Cloud.signOut(); gateDismissed = false; toast('Verrouillé'); }
 
+/* ---------- Notifications ---------- */
+function notify(title, body) { if (window.Cloud && window.Cloud.pushSend) window.Cloud.pushSend(title, body); }
+async function enableNotifs() {
+  if (!window.Cloud) return toast('Indisponible', 'err');
+  toast('Activation…');
+  const r = await window.Cloud.enablePush();
+  if (r && r.ok) toast('Notifications activées 🔔', 'ok');
+  else toast((r && r.error) || 'Impossible d\'activer', 'err');
+}
+async function testNotifs() {
+  if (!window.Cloud) return toast('Indisponible', 'err');
+  const r = await window.Cloud.pushTest();
+  if (r && r.error) toast(r.error, 'err');
+  else toast('Test envoyé — regarde tes notifications 🔔', 'ok');
+}
+
 /* Pont avec la couche cloud (cloud.js) */
 window.__jero = {
   // Applique un état venu du cloud : met à jour le cache local + l'affichage,
@@ -1258,5 +1295,6 @@ Object.assign(window, {
   openScan, resetScan, handleScanFile, handleScanFileAI, scanManual, analyzeManual,
   setScanQty, setScanTarget, removeScanLine, applyScan,
   askAssistant, addAlertsToCommandes, addCommande, toggleCommande, clearDoneCommandes,
+  enableNotifs, testNotifs,
   cloudPinLogin, gateSkip, gateShow, cloudLogout,
 });
