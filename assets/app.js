@@ -1,46 +1,59 @@
 /* =========================================================================
-   Jéroboam 120 — Application de gestion de restaurant
-   App web autonome (aucun serveur). Données persistées dans le navigateur
-   via localStorage. Export / import JSON pour sauvegarde et transfert.
+   Jéroboam 120 — Application mobile de gestion de restaurant
+   Interface app-like : tab bar basse, écrans, FAB, bottom-sheets.
+   Données persistées localement (localStorage) + export / import JSON.
    ========================================================================= */
 
 'use strict';
 
 const STORAGE_KEY = 'jero120.data.v1';
+const THEME_KEY = 'jero120.theme';
 
 /* ---------- Utilitaires ---------- */
-const $ = (sel, root = document) => root.querySelector(sel);
-const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
+const $ = (s, r = document) => r.querySelector(s);
+const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
 const uid = () => 'id' + Math.random().toString(36).slice(2, 9) + Date.now().toString(36).slice(-3);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const todayISO = () => new Date().toISOString().slice(0, 10);
-const eur = (n) => (Number(n) || 0).toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' });
+const eur = (n) => (Number(n) || 0).toLocaleString('fr-FR', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 });
+const frDateLong = (iso) => new Date(iso).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
+const frDT = (ts) => new Date(ts).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' }) + ' ' + new Date(ts).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
 
-function frDate(iso) {
-  if (!iso) return '';
-  const d = new Date(iso);
-  return d.toLocaleDateString('fr-FR', { weekday: 'short', day: '2-digit', month: 'short' });
-}
-function frDateTime(ts) {
-  const d = new Date(ts);
-  return d.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' }) + ' ' +
-         d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
-}
+/* ---------- Icônes (SVG ligne) ---------- */
+const I = {
+  home: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.6V20h14V9.6"/><path d="M9.5 20v-6h5v6"/></svg>',
+  box: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7.5 12 3l9 4.5v9L12 21 3 16.5z"/><path d="M3 7.5 12 12l9-4.5"/><path d="M12 12v9"/></svg>',
+  wine: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M8 22h8"/><path d="M12 15.5V22"/><path d="M6.5 3h11l-.7 6.2a4.8 4.8 0 0 1-9.6 0z"/><path d="M6.9 6.5h10.2"/></svg>',
+  plate: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="3.4"/></svg>',
+  more: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="3.5" width="7" height="7" rx="2"/><rect x="13.5" y="3.5" width="7" height="7" rx="2"/><rect x="3.5" y="13.5" width="7" height="7" rx="2"/><rect x="13.5" y="13.5" width="7" height="7" rx="2"/></svg>',
+  truck: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h11v9H3z"/><path d="M14 9h4l3 3v3h-7z"/><circle cx="7" cy="18" r="1.8"/><circle cx="17" cy="18" r="1.8"/></svg>',
+  calendar: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="5" width="17" height="16" rx="2.5"/><path d="M3.5 9.5h17"/><path d="M8 3v4M16 3v4"/></svg>',
+  chat: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h16v11H9l-4 3.5V16H4z"/></svg>',
+  check: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="3.5" width="17" height="17" rx="4"/><path d="m8 12 3 3 5-6"/></svg>',
+  note: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M5 3.5h9l5 5V20a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V4.5a1 1 0 0 1 1-1z"/><path d="M14 3.5V9h5"/><path d="M8 13h8M8 16.5h5"/></svg>',
+  back: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg>',
+  chevron: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5l7 7-7 7"/></svg>',
+  plus: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>',
+  edit: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4L18.5 9.5a2 2 0 0 0-2.8-2.8L5 17z"/><path d="M14 7l3 3"/></svg>',
+  trash: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M9 7V5h6v2M6 7l1 13h10l1-13"/></svg>',
+  search: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.2-3.2"/></svg>',
+  bell: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9a6 6 0 0 1 12 0c0 6 2 7 2 7H4s2-1 2-7z"/><path d="M10 20a2 2 0 0 0 4 0"/></svg>',
+  theme: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 14a8 8 0 1 1-10-10 7 7 0 0 0 10 10z"/></svg>',
+  download: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M7 11l5 5 5-5"/><path d="M5 20h14"/></svg>',
+  upload: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21V9M7 13l5-5 5 5"/><path d="M5 4h14"/></svg>',
+  plus_add: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg>',
+};
 
 /* ---------- Persistance ---------- */
 let DB = load();
-
 function load() {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) return JSON.parse(raw);
-  } catch (e) { console.warn('Lecture stockage impossible', e); }
+  try { const raw = localStorage.getItem(STORAGE_KEY); if (raw) return JSON.parse(raw); }
+  catch (e) { console.warn(e); }
   return seed();
 }
 function save() {
   try { localStorage.setItem(STORAGE_KEY, JSON.stringify(DB)); }
-  catch (e) { toast('Sauvegarde impossible (stockage plein ?)', 'err'); }
-  refreshBadges();
+  catch (e) { toast('Sauvegarde impossible', 'err'); }
 }
 
 /* ---------- Données de démonstration ---------- */
@@ -51,7 +64,7 @@ function seed() {
       { id: 'f1', nom: 'Metro Rungis', categorie: 'Épicerie', contact: 'M. Bernard', telephone: '01 45 12 33 00', email: 'commandes@metro.fr', delai: 1, notes: 'Livraison avant 10h' },
       { id: 'f2', nom: 'Maison Dubois — Primeurs', categorie: 'Fruits & légumes', contact: 'Claire Dubois', telephone: '06 12 45 78 90', email: 'claire@dubois-primeurs.fr', delai: 1, notes: '' },
       { id: 'f3', nom: 'Boucherie Lefèvre', categorie: 'Viandes', contact: 'Paul Lefèvre', telephone: '01 43 55 21 10', email: 'paul@boucherie-lefevre.fr', delai: 2, notes: 'Fermé le lundi' },
-      { id: 'f4', nom: 'Domaines & Terroirs', categorie: 'Vins & spiritueux', contact: 'Sophie Marchand', telephone: '03 80 24 11 22', email: 'contact@domaines-terroirs.fr', delai: 4, notes: 'Franco à partir de 12 bouteilles' },
+      { id: 'f4', nom: 'Domaines & Terroirs', categorie: 'Vins & spiritueux', contact: 'Sophie Marchand', telephone: '03 80 24 11 22', email: 'contact@domaines-terroirs.fr', delai: 4, notes: 'Franco dès 12 bouteilles' },
     ],
     stocks: [
       { id: 's1', nom: 'Farine T55', categorie: 'Épicerie', unite: 'kg', quantite: 8, seuil: 10, fournisseurId: 'f1' },
@@ -84,16 +97,16 @@ function seed() {
         { id: 'o1', texte: 'Relever les températures des frigos et congélateurs', fait: false },
         { id: 'o2', texte: 'Allumer la machine à café et le four', fait: false },
         { id: 'o3', texte: 'Vérifier la mise en place des tables', fait: false },
-        { id: 'o4', texte: 'Contrôler la caisse (fond de caisse)', fait: false },
+        { id: 'o4', texte: 'Contrôler le fond de caisse', fait: false },
         { id: 'o5', texte: 'Briefing équipe : plats du jour & 86', fait: false },
       ],
       fermeture: [
         { id: 'ff1', texte: 'Nettoyer et désinfecter les plans de travail', fait: false },
-        { id: 'ff2', texte: 'Vider et nettoyer les frigos si besoin', fait: false },
+        { id: 'ff2', texte: 'Vérifier fermeture des frigos', fait: false },
         { id: 'ff3', texte: 'Sortir les poubelles et le tri', fait: false },
         { id: 'ff4', texte: 'Compter la caisse et fermer le TPE', fait: false },
         { id: 'ff5', texte: 'Éteindre équipements, gaz et lumières', fait: false },
-        { id: 'ff6', texte: 'Fermer portes et activer l\'alarme', fait: false },
+        { id: 'ff6', texte: 'Fermer les portes et activer l\'alarme', fait: false },
       ],
     },
     notes: [
@@ -103,670 +116,563 @@ function seed() {
   };
 }
 
-/* ---------- Requêtes dérivées ---------- */
+/* ---------- Sélecteurs dérivés ---------- */
 const stockBas = () => DB.stocks.filter(s => Number(s.quantite) <= Number(s.seuil));
 const vinBas = () => DB.vins.filter(v => Number(v.quantite) <= Number(v.seuil));
 const commOuverts = () => DB.comm.filter(c => !c.resolu);
 const fournisseurNom = (id) => (DB.fournisseurs.find(f => f.id === id) || {}).nom || '—';
 
 /* =========================================================================
-   VUES
+   ÉCRANS
    ========================================================================= */
 
-function viewTableauDeBord() {
+/* ---------- Accueil / tableau de bord (#18) ---------- */
+function scrAccueil() {
   const sb = stockBas(), vb = vinBas(), co = commOuverts();
   const platsJour = DB.plats.filter(p => p.date === todayISO());
-  const planningJour = DB.planning.filter(p => p.jour === todayISO());
-  const valeurCave = DB.vins.reduce((t, v) => t + Number(v.quantite) * Number(v.prixAchat || 0), 0);
-  const totalAlertes = sb.length + vb.length;
-
+  const planningJour = DB.planning.filter(p => p.jour === todayISO()).sort((a, b) => a.debut.localeCompare(b.debut));
+  const valeurCave = DB.vins.reduce((t, v) => t + v.quantite * (v.prixAchat || 0), 0);
+  const alertes = sb.length + vb.length;
   const chkO = DB.checklists.ouverture, chkF = DB.checklists.fermeture;
-  const pctO = chkO.length ? Math.round(chkO.filter(x => x.fait).length / chkO.length * 100) : 0;
-  const pctF = chkF.length ? Math.round(chkF.filter(x => x.fait).length / chkF.length * 100) : 0;
+  const pct = (l) => l.length ? Math.round(l.filter(x => x.fait).length / l.length * 100) : 0;
 
   return `
-    ${pageHead('Tableau de bord', 'Vue d\'ensemble — ' + new Date().toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }))}
-    <div class="grid dash-grid">
-      ${stat(totalAlertes, 'Alertes de stock', totalAlertes ? 'À réapprovisionner' : 'Tout est au niveau', totalAlertes ? 'red' : 'green')}
-      ${stat(co.length, 'Messages salle ↔ cuisine', co.length ? 'En attente' : 'Aucun en attente', co.length ? 'amber' : 'green')}
-      ${stat(platsJour.length, 'Plats du jour', 'Programmés aujourd\'hui', '')}
-      ${stat(eur(valeurCave), 'Valeur de la cave', DB.vins.reduce((t, v) => t + Number(v.quantite), 0) + ' bouteilles', '')}
+    <div class="hero">
+      <div class="hello">Bonjour 👋 · <span style="text-transform:capitalize">${new Date().toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })}</span></div>
+      <div class="htitle">Jéroboam 120</div>
+      <div class="hrow">
+        <div class="hchip"><div class="n">${alertes}</div><div class="l">Alerte${alertes > 1 ? 's' : ''} de stock</div></div>
+        <div class="hchip"><div class="n">${co.length}</div><div class="l">Message${co.length > 1 ? 's' : ''} en cours</div></div>
+        <div class="hchip"><div class="n">${platsJour.length}</div><div class="l">Plat${platsJour.length > 1 ? 's' : ''} du jour</div></div>
+      </div>
     </div>
 
-    <div class="dash-cols">
-      <div class="card">
-        <h3>⚠️ Réapprovisionnement</h3>
-        ${totalAlertes === 0
-          ? '<p class="muted">Aucun produit sous le seuil. 👌</p>'
-          : `<div class="list">${[...sb.map(s => alertRow(s.nom, `${s.quantite} ${s.unite} / seuil ${s.seuil}`, 'Stock')),
-              ...vb.map(v => alertRow(v.nom, `${v.quantite} bt / seuil ${v.seuil}`, 'Cave'))].join('')}</div>`}
-      </div>
+    ${alertes ? `<div class="eyebrow">À réapprovisionner <span class="pill p-danger">${alertes}</span></div>
+      <div class="rows">
+        ${[...sb.map(s => alertRow(s.nom, `${s.quantite} ${s.unite} · seuil ${s.seuil}`, 'stocks')),
+           ...vb.map(v => alertRow(v.nom, `${v.quantite} bouteille(s) · seuil ${v.seuil}`, 'cave'))].join('')}
+      </div>` : `<div class="card spread"><div><strong>Stocks au niveau ✅</strong><div class="muted" style="font-size:13px">Rien à recommander pour l'instant.</div></div></div>`}
 
-      <div class="card">
-        <h3>🍽️ Plats du jour</h3>
-        ${platsJour.length === 0
-          ? '<p class="muted">Aucun plat programmé. <a href="#/plats-du-jour">En ajouter →</a></p>'
-          : `<div class="list">${platsJour.map(p => `
-            <div class="list-item" style="padding:11px 14px">
-              <div class="li-main">
-                <strong>${esc(p.nom)}</strong> ${p.dispo ? '' : '<span class="badge badge-danger">86 / épuisé</span>'}
-                <div class="li-meta">${esc(p.description || '')}</div>
-              </div>
-              <span class="badge badge-wine">${eur(p.prix)}</span>
-            </div>`).join('')}</div>`}
-      </div>
+    <div class="eyebrow" style="margin-top:20px">Aperçu</div>
+    <div class="stat-grid">
+      <button class="stat" onclick="go('cave')" style="text-align:left;cursor:pointer;border:1px solid var(--line)">
+        <div class="v">${eur(valeurCave)}</div><div class="l">Valeur de la cave</div></button>
+      <button class="stat" onclick="go('plus')" style="text-align:left;cursor:pointer;border:1px solid var(--line)">
+        <div class="v">${planningJour.length}</div><div class="l">Au service aujourd'hui</div></button>
+    </div>
 
-      <div class="card">
-        <h3>🗓️ Équipe du jour</h3>
-        ${planningJour.length === 0
-          ? '<p class="muted">Aucun service programmé aujourd\'hui.</p>'
-          : `<div class="list">${planningJour.map(p => `
-            <div class="list-item" style="padding:11px 14px">
-              <div class="li-main"><strong>${esc(p.employe)}</strong><div class="li-meta">${esc(p.role)}</div></div>
-              <span class="badge badge-muted nowrap">${p.debut} – ${p.fin}</span>
-            </div>`).join('')}</div>`}
-      </div>
+    ${platsJour.length ? `<div class="eyebrow" style="margin-top:20px">Plats du jour <a onclick="go('plats')">Gérer</a></div>
+      <div class="grid-list">${platsJour.map(p => `
+        <div class="tile"><div class="spread">
+          <div><div class="tile-title">${esc(p.nom)}</div><div class="tile-sub">${esc(p.description || '')}</div></div>
+          <div class="nowrap">${p.dispo ? `<span class="pill p-price">${eur(p.prix)}</span>` : '<span class="pill p-danger">86</span>'}</div>
+        </div></div>`).join('')}</div>` : ''}
 
-      <div class="card">
-        <h3>✅ Checklists du jour</h3>
-        <div style="margin-bottom:14px">
-          <div style="display:flex;justify-content:space-between;font-size:13.5px"><span>Ouverture</span><strong>${pctO}%</strong></div>
-          <div class="progress"><span style="width:${pctO}%"></span></div>
-        </div>
-        <div>
-          <div style="display:flex;justify-content:space-between;font-size:13.5px"><span>Fermeture</span><strong>${pctF}%</strong></div>
-          <div class="progress"><span style="width:${pctF}%"></span></div>
-        </div>
-        <p style="margin:14px 0 0"><a href="#/checklists">Ouvrir les checklists →</a></p>
-      </div>
+    ${planningJour.length ? `<div class="eyebrow" style="margin-top:20px">Équipe du jour</div>
+      <div class="rows">${planningJour.map(p => `
+        <div class="row"><div class="r-ico">${I.calendar}</div>
+          <div class="r-main"><div class="r-title">${esc(p.employe)}</div><div class="r-sub">${esc(p.role)}</div></div>
+          <span class="pill p-muted nowrap">${p.debut}–${p.fin}</span></div>`).join('')}</div>` : ''}
 
-      <div class="card">
-        <h3>📝 Dernières consignes</h3>
-        ${DB.notes.length === 0
-          ? '<p class="muted">Aucune note.</p>'
-          : `<div class="list">${DB.notes.slice().sort((a,b)=> (b.epingle-a.epingle)||(b.ts-a.ts)).slice(0,3).map(n => `
-            <div class="list-item ${n.epingle ? 'pinned' : ''}" style="padding:11px 14px">
-              <div class="li-main">${n.epingle ? '📌 ' : ''}${esc(n.texte)}<div class="li-meta">${esc(n.auteur)} · ${frDateTime(n.ts)}</div></div>
-            </div>`).join('')}</div>`}
-      </div>
+    <div class="eyebrow" style="margin-top:20px">Checklists <a onclick="go('checklists')">Ouvrir</a></div>
+    <div class="card">
+      <div class="spread" style="margin-bottom:6px"><span>Ouverture</span><strong>${pct(chkO)}%</strong></div>
+      <div class="progress"><span style="width:${pct(chkO)}%"></span></div>
+      <div class="spread" style="margin:14px 0 6px"><span>Fermeture</span><strong>${pct(chkF)}%</strong></div>
+      <div class="progress"><span style="width:${pct(chkF)}%"></span></div>
     </div>`;
 }
-const alertRow = (nom, detail, tag) => `
-  <div class="list-item" style="padding:11px 14px;border-left:3px solid var(--red)">
-    <div class="li-main"><strong>${esc(nom)}</strong><div class="li-meta">${esc(detail)}</div></div>
-    <span class="badge badge-muted">${tag}</span>
-  </div>`;
+const alertRow = (nom, sub, screen) => `
+  <button class="row alert" onclick="go('${screen}')">
+    <div class="r-ico" style="background:color-mix(in srgb,var(--red) 12%,transparent);color:var(--red)">${I.bell}</div>
+    <div class="r-main"><div class="r-title">${esc(nom)}</div><div class="r-sub">${esc(sub)}</div></div>
+    <span class="chev">${I.chevron}</span></button>`;
 
 /* ---------- Stocks (#5 + #6) ---------- */
-function viewStocks() {
+function scrStocks() {
   const bas = stockBas();
-  const rows = DB.stocks.slice().sort((a, b) => (a.quantite <= a.seuil ? -1 : 1) - (b.quantite <= b.seuil ? -1 : 1) || a.nom.localeCompare(b.nom));
+  const rows = DB.stocks.slice().sort((a, b) => (b.quantite <= b.seuil) - (a.quantite <= a.seuil) || a.nom.localeCompare(b.nom));
   return `
-    ${pageHead('Stocks', 'Inventaire et alertes de réapprovisionnement', `<button class="btn" onclick="editStock()">+ Produit</button>`)}
-    ${bas.length ? `<div class="card" style="border-left:4px solid var(--red);margin-bottom:18px">
-      <strong>⚠️ ${bas.length} produit(s) à réapprovisionner :</strong> ${bas.map(s => esc(s.nom)).join(', ')}.
-    </div>` : ''}
-    <div class="toolbar">
-      <div class="search"><input type="text" id="stockSearch" placeholder="Rechercher un produit…" oninput="filterTable('stocksTable', this.value)"></div>
-    </div>
-    <div class="table-wrap">
-      <table id="stocksTable">
-        <thead><tr><th>Produit</th><th>Catégorie</th><th class="num">Quantité</th><th class="num">Seuil</th><th>Fournisseur</th><th>État</th><th></th></tr></thead>
-        <tbody>
-          ${rows.map(s => {
-            const low = Number(s.quantite) <= Number(s.seuil);
-            return `<tr class="${low ? 'row-alert' : ''}">
-              <td><strong>${esc(s.nom)}</strong></td>
-              <td>${esc(s.categorie)}</td>
-              <td class="num">${esc(s.quantite)} ${esc(s.unite)}</td>
-              <td class="num muted">${esc(s.seuil)} ${esc(s.unite)}</td>
-              <td>${esc(fournisseurNom(s.fournisseurId))}</td>
-              <td>${low ? '<span class="badge badge-danger">À commander</span>' : '<span class="badge badge-ok">OK</span>'}</td>
-              <td class="nowrap right">
-                <button class="icon-btn" title="Réappro" onclick="quickRestock('${s.id}')">➕</button>
-                <button class="icon-btn" title="Modifier" onclick="editStock('${s.id}')">✏️</button>
-                <button class="icon-btn" title="Supprimer" onclick="delItem('stocks','${s.id}')">🗑️</button>
-              </td></tr>`;
-          }).join('') || emptyRow(7, 'Aucun produit en stock.')}
-        </tbody>
-      </table>
+    ${bas.length ? `<div class="card" style="border-left:3px solid var(--red);margin-bottom:12px"><strong>${bas.length} produit(s) à commander</strong><div class="muted" style="font-size:13px">${bas.map(s => esc(s.nom)).join(', ')}</div></div>` : ''}
+    ${searchBar('Rechercher un produit…')}
+    <div class="rows" id="list">
+      ${rows.map(s => {
+        const low = s.quantite <= s.seuil;
+        return `<div class="row ${low ? 'alert' : ''}" data-search="${esc(s.nom + ' ' + s.categorie)}">
+          <div class="r-ico">${I.box}</div>
+          <div class="r-main">
+            <div class="r-title">${esc(s.nom)}</div>
+            <div class="r-sub">${esc(s.quantite)} ${esc(s.unite)} · seuil ${esc(s.seuil)} · ${esc(fournisseurNom(s.fournisseurId))}</div>
+          </div>
+          <div class="r-right">
+            ${low ? '<span class="pill p-danger">À commander</span>' : '<span class="pill p-ok">OK</span>'}
+            <button class="icon-btn" onclick="quickRestock('${s.id}')" aria-label="Réapprovisionner">${I.plus_add}</button>
+            <button class="icon-btn" onclick="editStock('${s.id}')" aria-label="Modifier">${I.edit}</button>
+          </div></div>`;
+      }).join('') || empty(I.box, 'Aucun produit', 'Touchez + pour ajouter un produit.')}
     </div>`;
 }
 function editStock(id) {
   const s = id ? DB.stocks.find(x => x.id === id) : { nom: '', categorie: 'Épicerie', unite: 'kg', quantite: 0, seuil: 0, fournisseurId: DB.fournisseurs[0]?.id || '' };
   const opts = DB.fournisseurs.map(f => `<option value="${f.id}" ${f.id === s.fournisseurId ? 'selected' : ''}>${esc(f.nom)}</option>`).join('');
-  openModal(id ? 'Modifier le produit' : 'Nouveau produit', `
+  sheet(id ? 'Modifier le produit' : 'Nouveau produit', `
     ${fld('Nom du produit', `<input id="m_nom" value="${esc(s.nom)}" placeholder="Ex. Farine T55">`)}
     <div class="form-row">
-      ${fld('Catégorie', `<input id="m_cat" value="${esc(s.categorie)}" list="catList"><datalist id="catList"><option>Épicerie</option><option>Crémerie</option><option>Fruits & légumes</option><option>Viandes</option><option>Poissons</option><option>Boissons</option></datalist>`)}
-      ${fld('Unité', `<select id="m_unite">${['kg','g','L','cl','pièce','botte','boîte'].map(u=>`<option ${u===s.unite?'selected':''}>${u}</option>`).join('')}</select>`)}
+      ${fld('Catégorie', `<input id="m_cat" value="${esc(s.categorie)}" list="catL"><datalist id="catL"><option>Épicerie</option><option>Crémerie</option><option>Fruits & légumes</option><option>Viandes</option><option>Poissons</option><option>Boissons</option></datalist>`)}
+      ${fld('Unité', `<select id="m_unite">${['kg', 'g', 'L', 'cl', 'pièce', 'botte', 'boîte'].map(u => `<option ${u === s.unite ? 'selected' : ''}>${u}</option>`).join('')}</select>`)}
     </div>
     <div class="form-row">
-      ${fld('Quantité en stock', `<input id="m_qte" type="number" min="0" step="0.1" value="${esc(s.quantite)}">`)}
-      ${fld('Seuil d\'alerte', `<input id="m_seuil" type="number" min="0" step="0.1" value="${esc(s.seuil)}">`)}
+      ${fld('Quantité', `<input id="m_qte" type="number" inputmode="decimal" min="0" step="0.1" value="${esc(s.quantite)}">`)}
+      ${fld('Seuil d\'alerte', `<input id="m_seuil" type="number" inputmode="decimal" min="0" step="0.1" value="${esc(s.seuil)}">`)}
     </div>
     ${fld('Fournisseur', `<select id="m_four">${opts}</select>`)}
   `, () => {
-    const data = {
-      nom: $('#m_nom').value.trim(), categorie: $('#m_cat').value.trim(),
-      unite: $('#m_unite').value, quantite: Number($('#m_qte').value), seuil: Number($('#m_seuil').value),
-      fournisseurId: $('#m_four').value,
-    };
-    if (!data.nom) return toast('Le nom est obligatoire', 'err'), false;
-    if (id) Object.assign(s, data); else DB.stocks.push({ id: uid(), ...data });
+    const d = { nom: $('#m_nom').value.trim(), categorie: $('#m_cat').value.trim(), unite: $('#m_unite').value, quantite: +$('#m_qte').value, seuil: +$('#m_seuil').value, fournisseurId: $('#m_four').value };
+    if (!d.nom) return toast('Le nom est obligatoire', 'err'), false;
+    if (id) Object.assign(s, d); else DB.stocks.push({ id: uid(), ...d });
     save(); render(); toast('Produit enregistré', 'ok');
   });
 }
 function quickRestock(id) {
   const s = DB.stocks.find(x => x.id === id); if (!s) return;
-  const v = prompt(`Réapprovisionner « ${s.nom} » — quantité reçue (${s.unite}) :`, '');
+  const v = prompt(`Réappro « ${s.nom} » — quantité reçue (${s.unite}) :`, '');
   if (v === null || v === '') return;
-  const n = Number(v);
-  if (isNaN(n)) return toast('Valeur invalide', 'err');
-  s.quantite = Number(s.quantite) + n; save(); render(); toast('Stock mis à jour', 'ok');
-}
-
-/* ---------- Fournisseurs (#7) ---------- */
-function viewFournisseurs() {
-  return `
-    ${pageHead('Fournisseurs', 'Contacts, catégories et délais de livraison', `<button class="btn" onclick="editFournisseur()">+ Fournisseur</button>`)}
-    <div class="cards">
-      ${DB.fournisseurs.map(f => `
-        <div class="card">
-          <div style="display:flex;justify-content:space-between;align-items:flex-start">
-            <div><h3 style="margin-bottom:4px">${esc(f.nom)}</h3><span class="badge badge-wine">${esc(f.categorie)}</span></div>
-            <div class="nowrap">
-              <button class="icon-btn" onclick="editFournisseur('${f.id}')">✏️</button>
-              <button class="icon-btn" onclick="delItem('fournisseurs','${f.id}')">🗑️</button>
-            </div>
-          </div>
-          <div style="margin-top:12px;font-size:13.5px;line-height:1.9">
-            ${f.contact ? `👤 ${esc(f.contact)}<br>` : ''}
-            ${f.telephone ? `📞 <a href="tel:${esc(f.telephone)}">${esc(f.telephone)}</a><br>` : ''}
-            ${f.email ? `✉️ <a href="mailto:${esc(f.email)}">${esc(f.email)}</a><br>` : ''}
-            ⏱️ Délai : ${esc(f.delai)} j
-          </div>
-          ${f.notes ? `<div class="li-meta" style="margin-top:10px">📌 ${esc(f.notes)}</div>` : ''}
-        </div>`).join('') || `<div class="empty"><div class="empty-ico">🚚</div>Aucun fournisseur enregistré.</div>`}
-    </div>`;
-}
-function editFournisseur(id) {
-  const f = id ? DB.fournisseurs.find(x => x.id === id) : { nom: '', categorie: 'Épicerie', contact: '', telephone: '', email: '', delai: 1, notes: '' };
-  openModal(id ? 'Modifier le fournisseur' : 'Nouveau fournisseur', `
-    ${fld('Nom / raison sociale', `<input id="m_nom" value="${esc(f.nom)}">`)}
-    <div class="form-row">
-      ${fld('Catégorie', `<input id="m_cat" value="${esc(f.categorie)}">`)}
-      ${fld('Délai de livraison (jours)', `<input id="m_delai" type="number" min="0" value="${esc(f.delai)}">`)}
-    </div>
-    ${fld('Personne de contact', `<input id="m_contact" value="${esc(f.contact)}">`)}
-    <div class="form-row">
-      ${fld('Téléphone', `<input id="m_tel" value="${esc(f.telephone)}">`)}
-      ${fld('Email', `<input id="m_email" type="email" value="${esc(f.email)}">`)}
-    </div>
-    ${fld('Notes', `<textarea id="m_notes">${esc(f.notes)}</textarea>`)}
-  `, () => {
-    const data = { nom: $('#m_nom').value.trim(), categorie: $('#m_cat').value.trim(), contact: $('#m_contact').value.trim(),
-      telephone: $('#m_tel').value.trim(), email: $('#m_email').value.trim(), delai: Number($('#m_delai').value), notes: $('#m_notes').value.trim() };
-    if (!data.nom) return toast('Le nom est obligatoire', 'err'), false;
-    if (id) Object.assign(f, data); else DB.fournisseurs.push({ id: uid(), ...data });
-    save(); render(); toast('Fournisseur enregistré', 'ok');
-  });
+  if (isNaN(+v)) return toast('Valeur invalide', 'err');
+  s.quantite = +s.quantite + +v; save(); render(); toast('Stock mis à jour', 'ok');
 }
 
 /* ---------- Cave / Vins (#10) ---------- */
-function viewCave() {
-  const bas = vinBas();
-  const totalBt = DB.vins.reduce((t, v) => t + Number(v.quantite), 0);
-  const valeur = DB.vins.reduce((t, v) => t + Number(v.quantite) * Number(v.prixAchat || 0), 0);
+function scrCave() {
+  const bt = DB.vins.reduce((t, v) => t + +v.quantite, 0);
+  const val = DB.vins.reduce((t, v) => t + v.quantite * (v.prixAchat || 0), 0);
   return `
-    ${pageHead('Cave / Carte des vins', 'Bouteilles, millésimes, emplacements et valeur du stock', `<button class="btn" onclick="editVin()">+ Référence</button>`)}
-    <div class="grid dash-grid" style="margin-bottom:18px">
-      ${stat(totalBt, 'Bouteilles en cave', DB.vins.length + ' références', '')}
-      ${stat(eur(valeur), 'Valeur (prix d\'achat)', 'Immobilisé en cave', '')}
-      ${stat(bas.length, 'Références à recommander', bas.length ? 'Sous le seuil' : 'Cave bien fournie', bas.length ? 'red' : 'green')}
+    <div class="stat-grid" style="margin-bottom:14px">
+      <div class="stat"><div class="v">${bt}</div><div class="l">Bouteilles</div></div>
+      <div class="stat"><div class="v">${eur(val)}</div><div class="l">Valeur cave</div></div>
     </div>
-    <div class="toolbar"><div class="search"><input type="text" placeholder="Rechercher un vin…" oninput="filterTable('vinTable', this.value)"></div></div>
-    <div class="table-wrap">
-      <table id="vinTable">
-        <thead><tr><th>Cuvée</th><th>Type</th><th>Millésime</th><th>Région</th><th class="num">Stock</th><th>Emplacement</th><th class="num">Vente</th><th></th></tr></thead>
-        <tbody>
-          ${DB.vins.slice().sort((a,b)=>a.nom.localeCompare(b.nom)).map(v => {
-            const low = Number(v.quantite) <= Number(v.seuil);
-            return `<tr class="${low ? 'row-alert' : ''}">
-              <td><strong>${esc(v.nom)}</strong><div class="li-meta">${esc(v.domaine)}</div></td>
-              <td>${typeBadge(v.type)}</td>
-              <td>${v.millesime ? esc(v.millesime) : '<span class="muted">S.M.</span>'}</td>
-              <td>${esc(v.region)}</td>
-              <td class="num">${esc(v.quantite)} ${low ? '<span class="dot dot-red" title="Sous le seuil"></span>' : ''}</td>
-              <td class="muted">${esc(v.emplacement)}</td>
-              <td class="num">${eur(v.prixVente)}</td>
-              <td class="nowrap right">
-                <button class="icon-btn" title="Entrée de stock" onclick="quickVin('${v.id}')">➕</button>
-                <button class="icon-btn" onclick="editVin('${v.id}')">✏️</button>
-                <button class="icon-btn" onclick="delItem('vins','${v.id}')">🗑️</button>
-              </td></tr>`;
-          }).join('') || emptyRow(8, 'Aucune référence en cave.')}
-        </tbody>
-      </table>
+    ${searchBar('Rechercher un vin…')}
+    <div class="rows" id="list">
+      ${DB.vins.slice().sort((a, b) => a.nom.localeCompare(b.nom)).map(v => {
+        const low = v.quantite <= v.seuil;
+        const c = { Rouge: 'p-danger', Blanc: 'p-warn', 'Rosé': 'p-wine', Effervescent: 'p-ok', Doux: 'p-muted' }[v.type] || 'p-muted';
+        return `<div class="tile" data-search="${esc(v.nom + ' ' + v.domaine + ' ' + v.region + ' ' + v.type)}">
+          <div class="tile-head">
+            <div><div class="tile-title">${esc(v.nom)} ${low ? '<span class="dot red"></span>' : ''}</div>
+              <div class="tile-sub">${esc(v.domaine)}${v.millesime ? ' · ' + v.millesime : ''} · ${esc(v.region)}</div></div>
+            <span class="pill ${c}">${esc(v.type)}</span>
+          </div>
+          <div class="spread" style="margin-top:10px">
+            <div class="tile-sub">📍 ${esc(v.emplacement || '—')}</div>
+            <div class="nowrap"><span class="pill p-muted">${esc(v.quantite)} bt</span> <span class="pill p-price">${eur(v.prixVente)}</span></div>
+          </div>
+          <div class="tile-actions">
+            <button class="btn-sm btn-soft" onclick="quickVin('${v.id}')">+ Entrée</button>
+            <button class="icon-btn" onclick="editVin('${v.id}')">${I.edit}</button>
+            <button class="icon-btn" onclick="delItem('vins','${v.id}')">${I.trash}</button>
+          </div></div>`;
+      }).join('') || empty(I.wine, 'Cave vide', 'Touchez + pour ajouter une référence.')}
     </div>`;
-}
-function typeBadge(t) {
-  const map = { 'Rouge': 'badge-danger', 'Blanc': 'badge-warn', 'Rosé': 'badge-wine', 'Effervescent': 'badge-ok' };
-  return `<span class="badge ${map[t] || 'badge-muted'}">${esc(t)}</span>`;
 }
 function editVin(id) {
   const v = id ? DB.vins.find(x => x.id === id) : { nom: '', domaine: '', type: 'Rouge', millesime: '', region: '', quantite: 0, seuil: 6, emplacement: '', prixAchat: 0, prixVente: 0 };
-  openModal(id ? 'Modifier la référence' : 'Nouvelle référence', `
+  sheet(id ? 'Modifier la référence' : 'Nouvelle référence', `
     <div class="form-row">
-      ${fld('Cuvée / appellation', `<input id="m_nom" value="${esc(v.nom)}">`)}
-      ${fld('Domaine / maison', `<input id="m_dom" value="${esc(v.domaine)}">`)}
+      ${fld('Cuvée', `<input id="m_nom" value="${esc(v.nom)}">`)}
+      ${fld('Domaine', `<input id="m_dom" value="${esc(v.domaine)}">`)}
     </div>
     <div class="form-row">
-      ${fld('Type', `<select id="m_type">${['Rouge','Blanc','Rosé','Effervescent','Doux'].map(x=>`<option ${x===v.type?'selected':''}>${x}</option>`).join('')}</select>`)}
-      ${fld('Millésime (0 = sans)', `<input id="m_mil" type="number" min="0" value="${esc(v.millesime)}">`)}
+      ${fld('Type', `<select id="m_type">${['Rouge', 'Blanc', 'Rosé', 'Effervescent', 'Doux'].map(x => `<option ${x === v.type ? 'selected' : ''}>${x}</option>`).join('')}</select>`)}
+      ${fld('Millésime', `<input id="m_mil" type="number" inputmode="numeric" min="0" value="${esc(v.millesime)}" placeholder="0 = sans">`)}
     </div>
     <div class="form-row">
       ${fld('Région', `<input id="m_reg" value="${esc(v.region)}">`)}
       ${fld('Emplacement', `<input id="m_emp" value="${esc(v.emplacement)}" placeholder="Cave A — casier 3">`)}
     </div>
     <div class="form-row">
-      ${fld('Bouteilles en stock', `<input id="m_qte" type="number" min="0" value="${esc(v.quantite)}">`)}
-      ${fld('Seuil d\'alerte', `<input id="m_seuil" type="number" min="0" value="${esc(v.seuil)}">`)}
+      ${fld('Bouteilles', `<input id="m_qte" type="number" inputmode="numeric" min="0" value="${esc(v.quantite)}">`)}
+      ${fld('Seuil', `<input id="m_seuil" type="number" inputmode="numeric" min="0" value="${esc(v.seuil)}">`)}
     </div>
     <div class="form-row">
-      ${fld('Prix d\'achat (€)', `<input id="m_pa" type="number" min="0" step="0.5" value="${esc(v.prixAchat)}">`)}
-      ${fld('Prix de vente (€)', `<input id="m_pv" type="number" min="0" step="0.5" value="${esc(v.prixVente)}">`)}
+      ${fld('Prix achat (€)', `<input id="m_pa" type="number" inputmode="decimal" min="0" step="0.5" value="${esc(v.prixAchat)}">`)}
+      ${fld('Prix vente (€)', `<input id="m_pv" type="number" inputmode="decimal" min="0" step="0.5" value="${esc(v.prixVente)}">`)}
     </div>
   `, () => {
-    const data = { nom: $('#m_nom').value.trim(), domaine: $('#m_dom').value.trim(), type: $('#m_type').value,
-      millesime: Number($('#m_mil').value) || 0, region: $('#m_reg').value.trim(), emplacement: $('#m_emp').value.trim(),
-      quantite: Number($('#m_qte').value), seuil: Number($('#m_seuil').value), prixAchat: Number($('#m_pa').value), prixVente: Number($('#m_pv').value) };
-    if (!data.nom) return toast('La cuvée est obligatoire', 'err'), false;
-    if (id) Object.assign(v, data); else DB.vins.push({ id: uid(), ...data });
+    const d = { nom: $('#m_nom').value.trim(), domaine: $('#m_dom').value.trim(), type: $('#m_type').value, millesime: +$('#m_mil').value || 0, region: $('#m_reg').value.trim(), emplacement: $('#m_emp').value.trim(), quantite: +$('#m_qte').value, seuil: +$('#m_seuil').value, prixAchat: +$('#m_pa').value, prixVente: +$('#m_pv').value };
+    if (!d.nom) return toast('La cuvée est obligatoire', 'err'), false;
+    if (id) Object.assign(v, d); else DB.vins.push({ id: uid(), ...d });
     save(); render(); toast('Référence enregistrée', 'ok');
   });
 }
 function quickVin(id) {
   const v = DB.vins.find(x => x.id === id); if (!v) return;
-  const val = prompt(`Entrée de stock — « ${v.nom} » : nombre de bouteilles reçues`, '');
+  const val = prompt(`Entrée de stock — « ${v.nom} » : bouteilles reçues`, '');
   if (val === null || val === '') return;
-  const n = Number(val); if (isNaN(n)) return toast('Valeur invalide', 'err');
-  v.quantite = Number(v.quantite) + n; save(); render(); toast('Cave mise à jour', 'ok');
-}
-
-/* ---------- Planning (#11) ---------- */
-function viewPlanning() {
-  // 7 prochains jours
-  const days = [];
-  const base = new Date(todayISO());
-  for (let i = 0; i < 7; i++) { const d = new Date(base); d.setDate(base.getDate() + i); days.push(d.toISOString().slice(0, 10)); }
-  return `
-    ${pageHead('Planning de l\'équipe', 'Services des 7 prochains jours', `<button class="btn" onclick="editShift()">+ Service</button>`)}
-    <div class="grid" style="gap:14px">
-      ${days.map(day => {
-        const shifts = DB.planning.filter(p => p.jour === day).sort((a, b) => a.debut.localeCompare(b.debut));
-        const isToday = day === todayISO();
-        return `<div class="card" ${isToday ? 'style="border-left:4px solid var(--wine)"' : ''}>
-          <h3 style="text-transform:capitalize">${new Date(day).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })} ${isToday ? '<span class="badge badge-wine">Aujourd\'hui</span>' : ''}</h3>
-          ${shifts.length === 0 ? '<p class="muted" style="margin:0">Aucun service.</p>' :
-            `<div class="list">${shifts.map(p => `
-              <div class="list-item" style="padding:10px 14px">
-                <div class="li-main"><strong>${esc(p.employe)}</strong> <span class="li-meta">· ${esc(p.role)}</span></div>
-                <span class="badge badge-muted nowrap">${p.debut} – ${p.fin}</span>
-                <button class="icon-btn" onclick="editShift('${p.id}')">✏️</button>
-                <button class="icon-btn" onclick="delItem('planning','${p.id}')">🗑️</button>
-              </div>`).join('')}</div>`}
-        </div>`;
-      }).join('')}
-    </div>`;
-}
-function editShift(id) {
-  const p = id ? DB.planning.find(x => x.id === id) : { employe: '', role: 'Serveur', jour: todayISO(), debut: '11:00', fin: '15:00' };
-  openModal(id ? 'Modifier le service' : 'Nouveau service', `
-    ${fld('Employé', `<input id="m_emp" value="${esc(p.employe)}">`)}
-    ${fld('Poste', `<input id="m_role" value="${esc(p.role)}" list="roleList"><datalist id="roleList"><option>Chef de cuisine</option><option>Second de cuisine</option><option>Commis</option><option>Plongeur</option><option>Cheffe de rang</option><option>Serveur</option><option>Barman</option><option>Directeur</option></datalist>`)}
-    ${fld('Date', `<input id="m_jour" type="date" value="${esc(p.jour)}">`)}
-    <div class="form-row">
-      ${fld('Début', `<input id="m_deb" type="time" value="${esc(p.debut)}">`)}
-      ${fld('Fin', `<input id="m_fin" type="time" value="${esc(p.fin)}">`)}
-    </div>
-  `, () => {
-    const data = { employe: $('#m_emp').value.trim(), role: $('#m_role').value.trim(), jour: $('#m_jour').value, debut: $('#m_deb').value, fin: $('#m_fin').value };
-    if (!data.employe) return toast('Le nom de l\'employé est obligatoire', 'err'), false;
-    if (id) Object.assign(p, data); else DB.planning.push({ id: uid(), ...data });
-    save(); render(); toast('Service enregistré', 'ok');
-  });
+  if (isNaN(+val)) return toast('Valeur invalide', 'err');
+  v.quantite = +v.quantite + +val; save(); render(); toast('Cave mise à jour', 'ok');
 }
 
 /* ---------- Plats du jour (#22) ---------- */
-function viewPlats() {
+function scrPlats() {
   const jours = [...new Set(DB.plats.map(p => p.date))].sort().reverse();
-  return `
-    ${pageHead('Plats du jour', 'Programmez et gérez la disponibilité des plats', `<button class="btn" onclick="editPlat()">+ Plat</button>`)}
-    ${jours.length === 0 ? `<div class="empty"><div class="empty-ico">🍽️</div>Aucun plat programmé.</div>` :
-      jours.map(day => `
-        <div class="section-title">${new Date(day).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })}${day === todayISO() ? ' <span class="badge badge-wine">Aujourd\'hui</span>' : ''}</div>
-        <div class="cards">
-          ${DB.plats.filter(p => p.date === day).map(p => `
-            <div class="card" ${p.dispo ? '' : 'style="opacity:.6"'}>
-              <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
-                <strong style="font-size:15px">${esc(p.nom)}</strong>
-                <span class="badge badge-wine nowrap">${eur(p.prix)}</span>
-              </div>
-              <p class="li-meta" style="margin:8px 0 12px">${esc(p.description || '')}</p>
-              <div class="tag-row">
-                <button class="btn-sm ${p.dispo ? 'btn-outline' : 'btn'}" style="border-radius:8px;${p.dispo?'':'background:var(--red)'}" onclick="togglePlat('${p.id}')">${p.dispo ? '✔ Disponible' : '⛔ 86 / épuisé'}</button>
-                <button class="icon-btn" onclick="editPlat('${p.id}')">✏️</button>
-                <button class="icon-btn" onclick="delItem('plats','${p.id}')">🗑️</button>
-              </div>
-            </div>`).join('')}
-        </div>`).join('')}`;
+  if (!jours.length) return empty(I.plate, 'Aucun plat', 'Touchez + pour programmer un plat du jour.');
+  return jours.map(day => `
+    <div class="eyebrow" style="text-transform:capitalize">${frDateLong(day)}${day === todayISO() ? ' <span class="pill p-wine">Aujourd\'hui</span>' : ''}</div>
+    <div class="grid-list">
+      ${DB.plats.filter(p => p.date === day).map(p => `
+        <div class="tile" ${p.dispo ? '' : 'style="opacity:.6"'}>
+          <div class="tile-head">
+            <div><div class="tile-title">${esc(p.nom)}</div><div class="tile-sub">${esc(p.description || '')}</div></div>
+            <span class="pill p-price">${eur(p.prix)}</span>
+          </div>
+          <div class="tile-actions">
+            <button class="btn-sm ${p.dispo ? 'btn-soft' : 'btn'}" style="${p.dispo ? '' : 'background:var(--red)'}" onclick="togglePlat('${p.id}')">${p.dispo ? '✔ Disponible' : '⛔ 86 / épuisé'}</button>
+            <button class="icon-btn" onclick="editPlat('${p.id}')">${I.edit}</button>
+            <button class="icon-btn" onclick="delItem('plats','${p.id}')">${I.trash}</button>
+          </div></div>`).join('')}
+    </div>`).join('');
 }
-function togglePlat(id) {
-  const p = DB.plats.find(x => x.id === id); if (!p) return;
-  p.dispo = !p.dispo; save(); render();
-  toast(p.dispo ? 'Plat marqué disponible' : 'Plat marqué 86 (épuisé)', p.dispo ? 'ok' : '');
-}
+function togglePlat(id) { const p = DB.plats.find(x => x.id === id); if (!p) return; p.dispo = !p.dispo; save(); render(); toast(p.dispo ? 'Marqué disponible' : 'Marqué 86 (épuisé)', p.dispo ? 'ok' : ''); }
 function editPlat(id) {
   const p = id ? DB.plats.find(x => x.id === id) : { nom: '', description: '', prix: 0, date: todayISO(), dispo: true };
-  openModal(id ? 'Modifier le plat' : 'Nouveau plat du jour', `
+  sheet(id ? 'Modifier le plat' : 'Nouveau plat du jour', `
     ${fld('Nom du plat', `<input id="m_nom" value="${esc(p.nom)}">`)}
     ${fld('Description', `<textarea id="m_desc" placeholder="Garniture, accompagnement…">${esc(p.description)}</textarea>`)}
     <div class="form-row">
-      ${fld('Prix (€)', `<input id="m_prix" type="number" min="0" step="0.5" value="${esc(p.prix)}">`)}
+      ${fld('Prix (€)', `<input id="m_prix" type="number" inputmode="decimal" min="0" step="0.5" value="${esc(p.prix)}">`)}
       ${fld('Date', `<input id="m_date" type="date" value="${esc(p.date)}">`)}
     </div>
   `, () => {
-    const data = { nom: $('#m_nom').value.trim(), description: $('#m_desc').value.trim(), prix: Number($('#m_prix').value), date: $('#m_date').value, dispo: id ? p.dispo : true };
-    if (!data.nom) return toast('Le nom est obligatoire', 'err'), false;
-    if (id) Object.assign(p, data); else DB.plats.push({ id: uid(), ...data });
+    const d = { nom: $('#m_nom').value.trim(), description: $('#m_desc').value.trim(), prix: +$('#m_prix').value, date: $('#m_date').value, dispo: id ? p.dispo : true };
+    if (!d.nom) return toast('Le nom est obligatoire', 'err'), false;
+    if (id) Object.assign(p, d); else DB.plats.push({ id: uid(), ...d });
     save(); render(); toast('Plat enregistré', 'ok');
   });
 }
 
-/* ---------- Communication salle ↔ cuisine (#23) ---------- */
-function viewCommunication() {
-  const ouverts = DB.comm.filter(c => !c.resolu).sort((a, b) => b.ts - a.ts);
-  const resolus = DB.comm.filter(c => c.resolu).sort((a, b) => b.ts - a.ts).slice(0, 20);
+/* ---------- Plus (menu) ---------- */
+function scrPlus() {
+  const co = commOuverts().length;
+  const menu = [
+    { s: 'communication', ic: I.chat, t: 'Salle ↔ Cuisine', d: 'Messages, signalements & 86', badge: co },
+    { s: 'planning', ic: I.calendar, t: 'Planning équipe', d: 'Services des 7 prochains jours' },
+    { s: 'fournisseurs', ic: I.truck, t: 'Fournisseurs', d: `${DB.fournisseurs.length} contact(s)` },
+    { s: 'checklists', ic: I.check, t: 'Checklists', d: 'Ouverture & fermeture' },
+    { s: 'notes', ic: I.note, t: 'Notes & consignes', d: 'Cahier de liaison de l\'équipe' },
+  ];
   return `
-    ${pageHead('Salle ↔ Cuisine', 'Messages, signalements et plats « 86 » (épuisés)')}
-    <div class="card" style="margin-bottom:20px">
-      <div class="form-row" style="grid-template-columns:auto 1fr;align-items:end">
-        ${fld('Type', `<select id="c_type"><option value="message">💬 Message</option><option value="86">⛔ 86 (produit épuisé)</option></select>`)}
-        ${fld('Message', `<input id="c_texte" placeholder="Ex. Plus de saumon / Table 5 sans gluten…" onkeydown="if(event.key==='Enter')addComm()">`)}
-      </div>
-      <div class="form-row" style="grid-template-columns:auto auto;justify-content:start">
-        ${fld('De la part de', `<select id="c_auteur"><option>Salle</option><option>Cuisine</option><option>Direction</option><option>Bar</option></select>`)}
-        <div class="field" style="justify-content:end"><button class="btn" onclick="addComm()">Envoyer</button></div>
-      </div>
+    <div class="rows">
+      ${menu.map(m => `<button class="row" onclick="go('${m.s}')">
+        <div class="r-ico">${m.ic}</div>
+        <div class="r-main"><div class="r-title">${m.t}</div><div class="r-sub">${m.d}</div></div>
+        <div class="r-right">${m.badge ? `<span class="pill p-danger">${m.badge}</span>` : ''}<span class="chev">${I.chevron}</span></div>
+      </button>`).join('')}
     </div>
 
-    <div class="section-title">📨 En cours ${ouverts.length ? `<span class="badge badge-danger">${ouverts.length}</span>` : ''}</div>
-    ${ouverts.length === 0 ? '<p class="muted">Aucun message en attente. 👌</p>' :
-      `<div class="list">${ouverts.map(c => commItem(c)).join('')}</div>`}
-
-    ${resolus.length ? `<div class="section-title">✔ Traités récemment</div>
-      <div class="list">${resolus.map(c => commItem(c, true)).join('')}</div>` : ''}`;
+    <div class="eyebrow" style="margin-top:22px">Données & sauvegarde</div>
+    <div class="rows">
+      <button class="row" onclick="exportData()"><div class="r-ico">${I.download}</div><div class="r-main"><div class="r-title">Exporter la sauvegarde</div><div class="r-sub">Enregistrer toutes les données (fichier .json)</div></div></button>
+      <button class="row" onclick="$('#importFile').click()"><div class="r-ico">${I.upload}</div><div class="r-main"><div class="r-title">Importer une sauvegarde</div><div class="r-sub">Restaurer depuis un fichier</div></div></button>
+      <button class="row" onclick="toggleTheme()"><div class="r-ico">${I.theme}</div><div class="r-main"><div class="r-title">Thème clair / sombre</div><div class="r-sub">Basculer l'apparence</div></div></button>
+    </div>
+    <p class="muted" style="text-align:center;font-size:12px;margin-top:22px">Jéroboam 120 · données enregistrées sur cet appareil</p>`;
 }
-function commItem(c, done = false) {
-  return `<div class="list-item" style="${done ? 'opacity:.55;' : ''}${c.type === '86' ? 'border-left:3px solid var(--red)' : 'border-left:3px solid var(--wine)'}">
-    <div class="li-main">
-      ${c.type === '86' ? '<span class="badge badge-danger">86</span> ' : ''}${esc(c.texte)}
-      <div class="li-meta">${esc(c.auteur)} · ${frDateTime(c.ts)}</div>
+
+/* ---------- Communication (#23) ---------- */
+function scrCommunication() {
+  const ouverts = DB.comm.filter(c => !c.resolu).sort((a, b) => b.ts - a.ts);
+  const resolus = DB.comm.filter(c => c.resolu).sort((a, b) => b.ts - a.ts).slice(0, 15);
+  return `
+    <div class="card">
+      ${fld('Message', `<input id="c_texte" placeholder="Ex. Plus de saumon · Table 5 sans gluten…" onkeydown="if(event.key==='Enter')addComm()">`)}
+      <div class="form-row">
+        ${fld('Type', `<select id="c_type"><option value="message">💬 Message</option><option value="86">⛔ 86 (épuisé)</option></select>`)}
+        ${fld('De', `<select id="c_auteur"><option>Salle</option><option>Cuisine</option><option>Direction</option><option>Bar</option></select>`)}
+      </div>
+      <button class="btn" onclick="addComm()">Envoyer</button>
     </div>
-    ${done
-      ? `<button class="icon-btn" title="Rouvrir" onclick="toggleComm('${c.id}')">↩︎</button>`
-      : `<button class="btn-sm btn-outline" style="border-radius:8px" onclick="toggleComm('${c.id}')">✔ Traité</button>`}
-    <button class="icon-btn" onclick="delItem('comm','${c.id}')">🗑️</button>
-  </div>`;
+
+    <div class="eyebrow">En cours ${ouverts.length ? `<span class="pill p-danger">${ouverts.length}</span>` : ''}</div>
+    ${ouverts.length ? `<div class="rows">${ouverts.map(c => commRow(c)).join('')}</div>` : '<p class="muted" style="padding:4px">Aucun message en attente 👌</p>'}
+    ${resolus.length ? `<div class="eyebrow" style="margin-top:20px">Traités</div><div class="rows">${resolus.map(c => commRow(c, true)).join('')}</div>` : ''}`;
+}
+function commRow(c, done = false) {
+  return `<div class="row" style="${done ? 'opacity:.55;' : ''}${c.type === '86' ? 'border-left:3px solid var(--red)' : 'border-left:3px solid var(--wine)'}">
+    <div class="r-main"><div class="r-title" style="font-weight:500;font-size:14.5px">${c.type === '86' ? '<span class="pill p-danger">86</span> ' : ''}${esc(c.texte)}</div>
+      <div class="r-sub">${esc(c.auteur)} · ${frDT(c.ts)}</div></div>
+    <div class="r-right">
+      <button class="icon-btn" onclick="toggleComm('${c.id}')" aria-label="${done ? 'Rouvrir' : 'Marquer traité'}">${done ? '↩︎' : I.check}</button>
+      <button class="icon-btn" onclick="delItem('comm','${c.id}')">${I.trash}</button>
+    </div></div>`;
 }
 function addComm() {
-  const texte = $('#c_texte').value.trim();
-  if (!texte) return toast('Écrivez un message', 'err');
+  const texte = $('#c_texte').value.trim(); if (!texte) return toast('Écrivez un message', 'err');
   DB.comm.push({ id: uid(), type: $('#c_type').value, texte, auteur: $('#c_auteur').value, ts: Date.now(), resolu: false });
   save(); render(); toast('Message envoyé', 'ok');
 }
-function toggleComm(id) {
-  const c = DB.comm.find(x => x.id === id); if (!c) return;
-  c.resolu = !c.resolu; save(); render();
+function toggleComm(id) { const c = DB.comm.find(x => x.id === id); if (!c) return; c.resolu = !c.resolu; save(); render(); }
+
+/* ---------- Planning (#11) ---------- */
+function scrPlanning() {
+  const days = []; const base = new Date(todayISO());
+  for (let i = 0; i < 7; i++) { const d = new Date(base); d.setDate(base.getDate() + i); days.push(d.toISOString().slice(0, 10)); }
+  return days.map(day => {
+    const shifts = DB.planning.filter(p => p.jour === day).sort((a, b) => a.debut.localeCompare(b.debut));
+    return `<div class="eyebrow" style="text-transform:capitalize">${frDateLong(day)}${day === todayISO() ? ' <span class="pill p-wine">Aujourd\'hui</span>' : ''}</div>
+      ${shifts.length ? `<div class="rows">${shifts.map(p => `
+        <div class="row"><div class="r-ico">${I.calendar}</div>
+          <div class="r-main"><div class="r-title">${esc(p.employe)}</div><div class="r-sub">${esc(p.role)}</div></div>
+          <div class="r-right"><span class="pill p-muted nowrap">${p.debut}–${p.fin}</span>
+            <button class="icon-btn" onclick="editShift('${p.id}')">${I.edit}</button>
+            <button class="icon-btn" onclick="delItem('planning','${p.id}')">${I.trash}</button></div></div>`).join('')}</div>`
+        : '<p class="muted" style="padding:2px 4px 6px">Aucun service.</p>'}`;
+  }).join('');
+}
+function editShift(id) {
+  const p = id ? DB.planning.find(x => x.id === id) : { employe: '', role: 'Serveur', jour: todayISO(), debut: '11:00', fin: '15:00' };
+  sheet(id ? 'Modifier le service' : 'Nouveau service', `
+    ${fld('Employé', `<input id="m_emp" value="${esc(p.employe)}">`)}
+    ${fld('Poste', `<input id="m_role" value="${esc(p.role)}" list="roleL"><datalist id="roleL"><option>Chef de cuisine</option><option>Second de cuisine</option><option>Commis</option><option>Plongeur</option><option>Cheffe de rang</option><option>Serveur</option><option>Barman</option><option>Directeur</option></datalist>`)}
+    ${fld('Date', `<input id="m_jour" type="date" value="${esc(p.jour)}">`)}
+    <div class="form-row">${fld('Début', `<input id="m_deb" type="time" value="${esc(p.debut)}">`)}${fld('Fin', `<input id="m_fin" type="time" value="${esc(p.fin)}">`)}</div>
+  `, () => {
+    const d = { employe: $('#m_emp').value.trim(), role: $('#m_role').value.trim(), jour: $('#m_jour').value, debut: $('#m_deb').value, fin: $('#m_fin').value };
+    if (!d.employe) return toast('Le nom est obligatoire', 'err'), false;
+    if (id) Object.assign(p, d); else DB.planning.push({ id: uid(), ...d });
+    save(); render(); toast('Service enregistré', 'ok');
+  });
+}
+
+/* ---------- Fournisseurs (#7) ---------- */
+function scrFournisseurs() {
+  return `${searchBar('Rechercher un fournisseur…')}
+    <div class="grid-list" id="list">
+      ${DB.fournisseurs.map(f => `
+        <div class="tile" data-search="${esc(f.nom + ' ' + f.categorie)}">
+          <div class="tile-head"><div><div class="tile-title">${esc(f.nom)}</div><div class="tile-sub">${esc(f.categorie)} · délai ${esc(f.delai)} j</div></div>
+            <div class="nowrap"><button class="icon-btn" onclick="editFournisseur('${f.id}')">${I.edit}</button><button class="icon-btn" onclick="delItem('fournisseurs','${f.id}')">${I.trash}</button></div></div>
+          <div style="margin-top:10px;font-size:14px;line-height:2">
+            ${f.contact ? `👤 ${esc(f.contact)}<br>` : ''}
+            ${f.telephone ? `📞 <a href="tel:${esc(f.telephone)}">${esc(f.telephone)}</a><br>` : ''}
+            ${f.email ? `✉️ <a href="mailto:${esc(f.email)}">${esc(f.email)}</a>` : ''}
+          </div>
+          ${f.notes ? `<div class="tile-sub" style="margin-top:8px">📌 ${esc(f.notes)}</div>` : ''}
+        </div>`).join('') || empty(I.truck, 'Aucun fournisseur', 'Touchez + pour en ajouter un.')}
+    </div>`;
+}
+function editFournisseur(id) {
+  const f = id ? DB.fournisseurs.find(x => x.id === id) : { nom: '', categorie: 'Épicerie', contact: '', telephone: '', email: '', delai: 1, notes: '' };
+  sheet(id ? 'Modifier le fournisseur' : 'Nouveau fournisseur', `
+    ${fld('Nom / raison sociale', `<input id="m_nom" value="${esc(f.nom)}">`)}
+    <div class="form-row">${fld('Catégorie', `<input id="m_cat" value="${esc(f.categorie)}">`)}${fld('Délai (jours)', `<input id="m_delai" type="number" inputmode="numeric" min="0" value="${esc(f.delai)}">`)}</div>
+    ${fld('Contact', `<input id="m_contact" value="${esc(f.contact)}">`)}
+    <div class="form-row">${fld('Téléphone', `<input id="m_tel" type="tel" value="${esc(f.telephone)}">`)}${fld('Email', `<input id="m_email" type="email" value="${esc(f.email)}">`)}</div>
+    ${fld('Notes', `<textarea id="m_notes">${esc(f.notes)}</textarea>`)}
+  `, () => {
+    const d = { nom: $('#m_nom').value.trim(), categorie: $('#m_cat').value.trim(), contact: $('#m_contact').value.trim(), telephone: $('#m_tel').value.trim(), email: $('#m_email').value.trim(), delai: +$('#m_delai').value, notes: $('#m_notes').value.trim() };
+    if (!d.nom) return toast('Le nom est obligatoire', 'err'), false;
+    if (id) Object.assign(f, d); else DB.fournisseurs.push({ id: uid(), ...d });
+    save(); render(); toast('Fournisseur enregistré', 'ok');
+  });
 }
 
 /* ---------- Checklists (#27) ---------- */
-function viewChecklists() {
+let checkTab = 'ouverture';
+function scrChecklists() {
+  const key = checkTab; const list = DB.checklists[key];
+  const done = list.filter(x => x.fait).length; const pct = list.length ? Math.round(done / list.length * 100) : 0;
   return `
-    ${pageHead('Checklists', 'Ouverture et fermeture — ne rien oublier')}
-    <div class="dash-cols">
-      ${checklistCard('ouverture', '🌅 Ouverture')}
-      ${checklistCard('fermeture', '🌙 Fermeture')}
+    <div class="segment">
+      <button class="${key === 'ouverture' ? 'on' : ''}" onclick="setCheckTab('ouverture')">🌅 Ouverture</button>
+      <button class="${key === 'fermeture' ? 'on' : ''}" onclick="setCheckTab('fermeture')">🌙 Fermeture</button>
     </div>
-    <p class="hint" style="margin-top:20px">💡 En fin de journée, utilisez « Réinitialiser » pour repartir de zéro le lendemain.</p>`;
-}
-function checklistCard(key, titre) {
-  const list = DB.checklists[key];
-  const done = list.filter(x => x.fait).length;
-  const pct = list.length ? Math.round(done / list.length * 100) : 0;
-  return `<div class="card">
-    <div style="display:flex;justify-content:space-between;align-items:center">
-      <h3 style="margin:0">${titre}</h3>
-      <span class="badge ${pct === 100 ? 'badge-ok' : 'badge-muted'}">${done}/${list.length}</span>
-    </div>
-    <div class="progress" style="margin:12px 0 16px"><span style="width:${pct}%"></span></div>
-    <div>
-      ${list.map(item => `
-        <div class="check-line ${item.fait ? 'done' : ''}">
-          <input type="checkbox" ${item.fait ? 'checked' : ''} onchange="toggleCheck('${key}','${item.id}')" id="chk_${item.id}">
-          <label for="chk_${item.id}">${esc(item.texte)}</label>
-          <button class="icon-btn" onclick="delCheck('${key}','${item.id}')">🗑️</button>
+    <div class="card">
+      <div class="spread" style="margin-bottom:10px"><strong>${done}/${list.length} fait${done > 1 ? 's' : ''}</strong><span class="pill ${pct === 100 ? 'p-ok' : 'p-muted'}">${pct}%</span></div>
+      <div class="progress"><span style="width:${pct}%"></span></div>
+      <div style="margin-top:8px">
+        ${list.map(it => `<div class="check ${it.fait ? 'done' : ''}">
+          <input type="checkbox" ${it.fait ? 'checked' : ''} id="ck_${it.id}" onchange="toggleCheck('${key}','${it.id}')">
+          <label for="ck_${it.id}">${esc(it.texte)}</label>
+          <button class="icon-btn" onclick="delCheck('${key}','${it.id}')">${I.trash}</button>
         </div>`).join('')}
+      </div>
+      <div style="display:flex;gap:8px;margin-top:14px">
+        <input id="newChk" placeholder="Ajouter une tâche…" style="flex:1;padding:11px 12px;border:1px solid var(--line);border-radius:11px;background:var(--surface-2);color:var(--ink);font-size:15px" onkeydown="if(event.key==='Enter')addCheck('${key}')">
+        <button class="btn-sm btn" onclick="addCheck('${key}')">Ajouter</button>
+      </div>
     </div>
-    <div class="toolbar" style="margin:16px 0 0">
-      <input type="text" id="new_${key}" placeholder="Ajouter une tâche…" style="flex:1;padding:9px 12px;border:1px solid var(--line);border-radius:9px" onkeydown="if(event.key==='Enter')addCheck('${key}')">
-      <button class="btn btn-sm" onclick="addCheck('${key}')">Ajouter</button>
-      <button class="btn-sm btn-outline" style="border-radius:8px" onclick="resetCheck('${key}')">Réinitialiser</button>
-    </div>
-  </div>`;
+    <button class="btn btn-soft" style="margin-top:14px" onclick="resetCheck('${key}')">Réinitialiser la checklist</button>`;
 }
-function toggleCheck(key, id) {
-  const it = DB.checklists[key].find(x => x.id === id); if (!it) return;
-  it.fait = !it.fait; save();
-  // Re-render seulement les cartes pour garder la fluidité
-  render();
-}
-function addCheck(key) {
-  const input = $('#new_' + key); const texte = input.value.trim();
-  if (!texte) return;
-  DB.checklists[key].push({ id: uid(), texte, fait: false }); save(); render();
-}
-function delCheck(key, id) {
-  DB.checklists[key] = DB.checklists[key].filter(x => x.id !== id); save(); render();
-}
-function resetCheck(key) {
-  if (!confirm('Décocher toutes les tâches de cette checklist ?')) return;
-  DB.checklists[key].forEach(x => x.fait = false); save(); render(); toast('Checklist réinitialisée', 'ok');
-}
+function setCheckTab(k) { checkTab = k; render(); }
+function toggleCheck(key, id) { const it = DB.checklists[key].find(x => x.id === id); if (it) { it.fait = !it.fait; save(); render(); } }
+function addCheck(key) { const i = $('#newChk'); const t = i.value.trim(); if (!t) return; DB.checklists[key].push({ id: uid(), texte: t, fait: false }); save(); render(); }
+function delCheck(key, id) { DB.checklists[key] = DB.checklists[key].filter(x => x.id !== id); save(); render(); }
+function resetCheck(key) { if (!confirm('Décocher toutes les tâches ?')) return; DB.checklists[key].forEach(x => x.fait = false); save(); render(); toast('Checklist réinitialisée', 'ok'); }
 
-/* ---------- Notes & consignes (#30) ---------- */
-function viewNotes() {
+/* ---------- Notes (#30) ---------- */
+function scrNotes() {
   const notes = DB.notes.slice().sort((a, b) => (b.epingle - a.epingle) || (b.ts - a.ts));
-  return `
-    ${pageHead('Notes & consignes', 'Le cahier de liaison numérique de l\'équipe', `<button class="btn" onclick="editNote()">+ Note</button>`)}
-    ${notes.length === 0 ? `<div class="empty"><div class="empty-ico">📝</div>Aucune note pour le moment.</div>` :
-      `<div class="list">${notes.map(n => `
-        <div class="list-item ${n.epingle ? 'pinned' : ''}">
-          <div class="li-main">
-            ${n.epingle ? '📌 ' : ''}${esc(n.texte).replace(/\n/g, '<br>')}
-            <div class="li-meta">${esc(n.auteur)} · ${frDateTime(n.ts)}</div>
-          </div>
-          <button class="icon-btn" title="${n.epingle ? 'Désépingler' : 'Épingler'}" onclick="pinNote('${n.id}')">${n.epingle ? '📍' : '📌'}</button>
-          <button class="icon-btn" onclick="editNote('${n.id}')">✏️</button>
-          <button class="icon-btn" onclick="delItem('notes','${n.id}')">🗑️</button>
-        </div>`).join('')}</div>`}`;
+  if (!notes.length) return empty(I.note, 'Aucune note', 'Touchez + pour écrire une consigne.');
+  return `<div class="rows">${notes.map(n => `
+    <div class="row ${n.epingle ? 'pinned' : ''}" style="align-items:flex-start">
+      <div class="r-main"><div class="r-title" style="font-weight:500;font-size:14.5px">${n.epingle ? '📌 ' : ''}${esc(n.texte).replace(/\n/g, '<br>')}</div>
+        <div class="r-sub">${esc(n.auteur)} · ${frDT(n.ts)}</div></div>
+      <div class="r-right"><button class="icon-btn" onclick="pinNote('${n.id}')" aria-label="Épingler">${n.epingle ? '📍' : '📌'}</button>
+        <button class="icon-btn" onclick="editNote('${n.id}')">${I.edit}</button>
+        <button class="icon-btn" onclick="delItem('notes','${n.id}')">${I.trash}</button></div></div>`).join('')}</div>`;
 }
 function editNote(id) {
   const n = id ? DB.notes.find(x => x.id === id) : { texte: '', auteur: 'Direction', epingle: false };
-  openModal(id ? 'Modifier la note' : 'Nouvelle note', `
-    ${fld('Consigne / message', `<textarea id="m_texte" style="min-height:110px">${esc(n.texte)}</textarea>`)}
-    <div class="form-row">
-      ${fld('Auteur', `<input id="m_aut" value="${esc(n.auteur)}">`)}
-      ${fld('Épingler en haut', `<select id="m_pin"><option value="0" ${!n.epingle?'selected':''}>Non</option><option value="1" ${n.epingle?'selected':''}>Oui</option></select>`)}
-    </div>
+  sheet(id ? 'Modifier la note' : 'Nouvelle note', `
+    ${fld('Consigne / message', `<textarea id="m_texte" style="min-height:120px">${esc(n.texte)}</textarea>`)}
+    <div class="form-row">${fld('Auteur', `<input id="m_aut" value="${esc(n.auteur)}">`)}${fld('Épingler', `<select id="m_pin"><option value="0" ${!n.epingle ? 'selected' : ''}>Non</option><option value="1" ${n.epingle ? 'selected' : ''}>Oui</option></select>`)}</div>
   `, () => {
-    const texte = $('#m_texte').value.trim();
-    if (!texte) return toast('La note est vide', 'err'), false;
-    const data = { texte, auteur: $('#m_aut').value.trim() || 'Équipe', epingle: $('#m_pin').value === '1' };
-    if (id) Object.assign(n, data); else DB.notes.push({ id: uid(), ts: Date.now(), ...data });
-    if (id && !n.ts) n.ts = Date.now();
+    const texte = $('#m_texte').value.trim(); if (!texte) return toast('La note est vide', 'err'), false;
+    const d = { texte, auteur: $('#m_aut').value.trim() || 'Équipe', epingle: $('#m_pin').value === '1' };
+    if (id) Object.assign(n, d); else DB.notes.push({ id: uid(), ts: Date.now(), ...d });
     save(); render(); toast('Note enregistrée', 'ok');
   });
 }
-function pinNote(id) {
-  const n = DB.notes.find(x => x.id === id); if (!n) return;
-  n.epingle = !n.epingle; save(); render();
-}
+function pinNote(id) { const n = DB.notes.find(x => x.id === id); if (n) { n.epingle = !n.epingle; save(); render(); } }
 
 /* =========================================================================
    COMPOSANTS PARTAGÉS
    ========================================================================= */
-function pageHead(title, sub, actions = '') {
-  return `<div class="page-head">
-    <div><h1 class="page-title">${esc(title)}</h1>${sub ? `<p class="page-sub">${esc(sub)}</p>` : ''}</div>
-    <div>${actions}</div>
-  </div>`;
-}
-const stat = (value, label, foot, accent) => `
-  <div class="stat ${accent ? 'accent-' + accent : ''}">
-    <span class="stat-label">${esc(label)}</span>
-    <span class="stat-value">${value}</span>
-    <span class="stat-foot">${esc(foot)}</span>
-  </div>`;
 const fld = (label, input) => `<div class="field"><label>${esc(label)}</label>${input}</div>`;
-const emptyRow = (cols, txt) => `<tr><td colspan="${cols}" class="empty" style="padding:36px">${esc(txt)}</td></tr>`;
+const searchBar = (ph) => `<div class="search">${I.search}<input type="text" placeholder="${esc(ph)}" oninput="filterList(this.value)"></div>`;
+const empty = (ic, t, d) => `<div class="empty"><div class="ico">${ic}</div><strong style="display:block;font-size:16px;color:var(--ink)">${esc(t)}</strong><div style="margin-top:4px">${esc(d)}</div></div>`;
 
-function filterTable(tableId, q) {
+function filterList(q) {
   q = q.toLowerCase();
-  $$('#' + tableId + ' tbody tr').forEach(tr => {
-    tr.style.display = tr.textContent.toLowerCase().includes(q) ? '' : 'none';
-  });
+  $$('#list [data-search]').forEach(el => { el.style.display = el.dataset.search.toLowerCase().includes(q) ? '' : 'none'; });
 }
 
-/* Suppression générique */
 function delItem(collection, id) {
   const labels = { stocks: 'ce produit', fournisseurs: 'ce fournisseur', vins: 'cette référence', planning: 'ce service', plats: 'ce plat', comm: 'ce message', notes: 'cette note' };
   if (!confirm(`Supprimer ${labels[collection] || 'cet élément'} ?`)) return;
-  DB[collection] = DB[collection].filter(x => x.id !== id);
-  save(); render(); toast('Supprimé', '');
+  DB[collection] = DB[collection].filter(x => x.id !== id); save(); render(); toast('Supprimé');
 }
 
-/* ---------- Modal ---------- */
-let modalConfirm = null;
-function openModal(title, bodyHtml, onConfirm) {
-  modalConfirm = onConfirm;
+/* ---------- Bottom sheet ---------- */
+let sheetConfirm = null;
+function sheet(title, body, onConfirm) {
+  sheetConfirm = onConfirm;
   $('#modalRoot').innerHTML = `
-    <div class="modal-overlay" onclick="if(event.target===this)closeModal()">
-      <div class="modal" role="dialog" aria-modal="true">
-        <div class="modal-head"><h2>${esc(title)}</h2><button class="icon-btn" onclick="closeModal()">✕</button></div>
-        <div class="modal-body">${bodyHtml}</div>
-        <div class="modal-foot">
-          <button class="btn btn-outline" onclick="closeModal()">Annuler</button>
-          <button class="btn" onclick="submitModal()">Enregistrer</button>
-        </div>
+    <div class="sheet-overlay" onclick="if(event.target===this)closeSheet()">
+      <div class="sheet" role="dialog" aria-modal="true">
+        <div class="sheet-grip"></div>
+        <div class="sheet-head"><h2>${esc(title)}</h2><button class="icon-btn" onclick="closeSheet()">✕</button></div>
+        <div class="sheet-body">${body}</div>
+        <div class="sheet-foot"><button class="btn btn-outline" onclick="closeSheet()">Annuler</button><button class="btn" onclick="submitSheet()">Enregistrer</button></div>
       </div>
     </div>`;
   const first = $('#modalRoot input, #modalRoot textarea, #modalRoot select');
-  if (first) setTimeout(() => first.focus(), 50);
+  if (first) setTimeout(() => first.focus(), 120);
 }
-function submitModal() {
-  if (modalConfirm) { const r = modalConfirm(); if (r === false) return; }
-  closeModal();
-}
-function closeModal() { $('#modalRoot').innerHTML = ''; modalConfirm = null; }
+function submitSheet() { if (sheetConfirm && sheetConfirm() === false) return; closeSheet(); }
+function closeSheet() { $('#modalRoot').innerHTML = ''; sheetConfirm = null; }
 
 /* ---------- Toast ---------- */
 function toast(msg, kind = '') {
-  const el = document.createElement('div');
-  el.className = 'toast ' + kind;
-  el.textContent = msg;
+  const el = document.createElement('div'); el.className = 'toast ' + kind; el.textContent = msg;
   $('#toastRoot').appendChild(el);
-  setTimeout(() => { el.style.opacity = '0'; el.style.transition = 'opacity .3s'; setTimeout(() => el.remove(), 300); }, 2600);
+  setTimeout(() => { el.style.transition = 'opacity .3s, transform .3s'; el.style.opacity = '0'; el.style.transform = 'translateY(8px)'; setTimeout(() => el.remove(), 300); }, 2400);
 }
 
-/* ---------- Badges de navigation ---------- */
-function refreshBadges() {
-  const setBadge = (id, n) => { const el = $('#' + id); if (!el) return; el.textContent = n; el.classList.toggle('show', n > 0); };
-  setBadge('badgeStocks', stockBas().length);
-  setBadge('badgeCave', vinBas().length);
-  setBadge('badgeComm', commOuverts().length);
+/* ---------- Thème ---------- */
+function applyTheme() { const t = localStorage.getItem(THEME_KEY); if (t) document.documentElement.setAttribute('data-theme', t); }
+function toggleTheme() {
+  const cur = document.documentElement.getAttribute('data-theme')
+    || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+  const next = cur === 'dark' ? 'light' : 'dark';
+  document.documentElement.setAttribute('data-theme', next);
+  localStorage.setItem(THEME_KEY, next);
+  toast('Thème ' + (next === 'dark' ? 'sombre' : 'clair'), 'ok');
 }
 
 /* ---------- Import / Export ---------- */
 function exportData() {
   const blob = new Blob([JSON.stringify(DB, null, 2)], { type: 'application/json' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url; a.download = `jeroboam120-sauvegarde-${todayISO()}.json`;
-  a.click(); URL.revokeObjectURL(url);
+  const url = URL.createObjectURL(blob); const a = document.createElement('a');
+  a.href = url; a.download = `jeroboam120-sauvegarde-${todayISO()}.json`; a.click(); URL.revokeObjectURL(url);
   toast('Sauvegarde exportée', 'ok');
 }
 function importData(file) {
-  const reader = new FileReader();
-  reader.onload = () => {
-    try {
-      const data = JSON.parse(reader.result);
-      if (!data.stocks || !data.checklists) throw new Error('format');
-      if (!confirm('Remplacer toutes les données actuelles par le fichier importé ?')) return;
-      DB = data; save(); render(); toast('Données importées', 'ok');
-    } catch (e) { toast('Fichier invalide', 'err'); }
-  };
-  reader.readAsText(file);
+  const r = new FileReader();
+  r.onload = () => { try { const d = JSON.parse(r.result); if (!d.stocks || !d.checklists) throw 0; if (!confirm('Remplacer toutes les données par ce fichier ?')) return; DB = d; save(); render(); toast('Données importées', 'ok'); } catch { toast('Fichier invalide', 'err'); } };
+  r.readAsText(file);
 }
 
 /* =========================================================================
-   ROUTAGE
+   NAVIGATION (tab bar + écrans)
    ========================================================================= */
-const ROUTES = {
-  'tableau-de-bord': viewTableauDeBord,
-  'stocks': viewStocks,
-  'fournisseurs': viewFournisseurs,
-  'cave': viewCave,
-  'planning': viewPlanning,
-  'plats-du-jour': viewPlats,
-  'communication': viewCommunication,
-  'checklists': viewChecklists,
-  'notes': viewNotes,
+const SCREENS = {
+  accueil:       { title: 'Jéroboam 120', brand: true, tab: 'accueil', render: scrAccueil },
+  stocks:        { title: 'Stocks', tab: 'stocks', render: scrStocks, fab: 'editStock' },
+  cave:          { title: 'Cave / Vins', tab: 'cave', render: scrCave, fab: 'editVin' },
+  plats:         { title: 'Plats du jour', tab: 'plats', render: scrPlats, fab: 'editPlat' },
+  plus:          { title: 'Plus', tab: 'plus', render: scrPlus },
+  communication: { title: 'Salle ↔ Cuisine', tab: 'plus', back: 'plus', render: scrCommunication },
+  planning:      { title: 'Planning équipe', tab: 'plus', back: 'plus', render: scrPlanning, fab: 'editShift' },
+  fournisseurs:  { title: 'Fournisseurs', tab: 'plus', back: 'plus', render: scrFournisseurs, fab: 'editFournisseur' },
+  checklists:    { title: 'Checklists', tab: 'plus', back: 'plus', render: scrChecklists },
+  notes:         { title: 'Notes & consignes', tab: 'plus', back: 'plus', render: scrNotes, fab: 'editNote' },
 };
+const TABS = [
+  { id: 'accueil', label: 'Accueil', icon: I.home },
+  { id: 'stocks', label: 'Stocks', icon: I.box, badge: () => stockBas().length },
+  { id: 'cave', label: 'Cave', icon: I.wine, badge: () => vinBas().length },
+  { id: 'plats', label: 'Plats', icon: I.plate },
+  { id: 'plus', label: 'Plus', icon: I.more, badge: () => commOuverts().length },
+];
 
-function currentRoute() {
-  const h = location.hash.replace(/^#\//, '');
-  return ROUTES[h] ? h : 'tableau-de-bord';
+function go(screen) { location.hash = '#/' + screen; }
+function currentScreen() { const h = location.hash.replace(/^#\//, ''); return SCREENS[h] ? h : 'accueil'; }
+
+function renderTabbar(activeTab) {
+  $('#tabbar').innerHTML = TABS.map(t => {
+    const n = t.badge ? t.badge() : 0;
+    return `<button class="tab ${t.id === activeTab ? 'active' : ''}" onclick="go('${t.id}')">
+      ${t.icon}<span>${t.label}</span>
+      <span class="tab-badge ${n > 0 ? 'show' : ''}">${n}</span></button>`;
+  }).join('');
 }
+function renderAppbar(s) {
+  const left = s.back
+    ? `<button class="appbar-btn" onclick="go('${s.back}')" aria-label="Retour">${I.back}</button>`
+    : '';
+  const right = s.tab === 'accueil'
+    ? `<button class="appbar-btn" onclick="toggleTheme()" aria-label="Thème">${I.theme}</button>`
+    : '';
+  $('#appbar').innerHTML = `${left}<div class="appbar-title ${s.brand ? 'brand' : ''}">${s.brand ? 'Jéroboam <b>120</b>' : esc(s.title)}</div>${right}`;
+}
+function renderFab(s) {
+  const fab = $('#fab');
+  if (s.fab) { fab.hidden = false; fab.innerHTML = I.plus; fab.onclick = () => window[s.fab](); }
+  else { fab.hidden = true; fab.onclick = null; }
+}
+
 function render() {
-  const route = currentRoute();
-  $('#view').innerHTML = ROUTES[route]();
-  $$('#nav a').forEach(a => a.classList.toggle('active', a.dataset.view === route));
-  refreshBadges();
+  const key = currentScreen(); const s = SCREENS[key];
+  $('#view').innerHTML = s.render();
+  renderAppbar(s); renderFab(s); renderTabbar(s.tab);
+  $('#view').scrollIntoView({ block: 'start' });
   window.scrollTo(0, 0);
 }
 
-/* ---------- Initialisation ---------- */
-window.addEventListener('hashchange', () => { render(); closeMobileMenu(); });
-
-function closeMobileMenu() { $('#sidebar').classList.remove('open'); $('#backdrop').classList.remove('show'); }
-
+/* ---------- Init ---------- */
+applyTheme();
+window.addEventListener('hashchange', render);
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeSheet(); });
 document.addEventListener('DOMContentLoaded', () => {
-  if (!location.hash) location.hash = '#/tableau-de-bord';
+  if (!location.hash) location.hash = '#/accueil';
+  $('#importFile').addEventListener('change', e => { if (e.target.files[0]) importData(e.target.files[0]); e.target.value = ''; });
   render();
-
-  $('#menuToggle').addEventListener('click', () => { $('#sidebar').classList.toggle('open'); $('#backdrop').classList.toggle('show'); });
-  $('#backdrop').addEventListener('click', closeMobileMenu);
-  $('#exportBtn').addEventListener('click', exportData);
-  $('#importBtn').addEventListener('click', () => $('#importFile').click());
-  $('#importFile').addEventListener('change', (e) => { if (e.target.files[0]) importData(e.target.files[0]); e.target.value = ''; });
-  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeModal(); });
 });
 
-// Exposition des fonctions appelées via onclick inline
+/* Exposition pour les onclick inline */
 Object.assign(window, {
-  editStock, quickRestock, editFournisseur, editVin, quickVin, editShift,
-  editPlat, togglePlat, addComm, toggleComm, toggleCheck, addCheck, delCheck,
-  resetCheck, editNote, pinNote, delItem, closeModal, submitModal, filterTable,
+  go, editStock, quickRestock, editVin, quickVin, editPlat, togglePlat,
+  editShift, editFournisseur, addComm, toggleComm, setCheckTab, toggleCheck,
+  addCheck, delCheck, resetCheck, editNote, pinNote, delItem, filterList,
+  exportData, toggleTheme, closeSheet, submitSheet, $,
 });
