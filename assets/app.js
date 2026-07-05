@@ -502,15 +502,8 @@ function planningCalendarView() {
     ${DB.staff.length === 0
       ? `<div class="card muted" style="font-size:13px">Ajoute d'abord ton personnel (onglet Personnel) et leurs disponibilités.</div>`
       : planningGrid(days)}
-    <div style="display:flex;gap:8px;margin-top:12px">
-      <button class="btn" style="flex:1" onclick="generatePlanning()">✨ Générer</button>
-      <button class="btn btn-soft" style="flex:1" onclick="planningAI()">🤖 Avec l'IA</button>
-    </div>
-    <div class="card" style="margin-top:10px">
-      <strong style="font-size:14px">🤖 Consignes pour l'IA</strong>
-      <textarea id="aiInstr" placeholder="Ex. Julien pas le samedi · équilibrer les week-ends · Lucas 3 soirs max" style="width:100%;min-height:54px;margin-top:6px;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2);color:var(--ink);font-size:14px;font-family:inherit"></textarea>
-    </div>
-    <p class="hint" style="margin-top:10px">Touche une case pour ajouter un créneau · touche un créneau pour le retirer.</p>`;
+    <button class="btn" style="margin-top:12px" onclick="generatePlanning()">✨ Générer automatiquement</button>
+    <p class="hint" style="margin-top:10px">Touche une case pour ajouter un créneau · touche un créneau pour le retirer. « Générer » remplit la semaine selon les dispos et les besoins.</p>`;
 }
 function planningGrid(days) {
   const head = days.map(d => { const isT = d === todayISO(); return `<th class="pg-day${isT ? ' pg-today' : ''}">${WEEKDAYS_SHORT[wdIndex(d)]}<br><span>${new Date(d).getDate()}</span></th>`; }).join('');
