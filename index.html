@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#7b1e2b" />
+  <title>Jéroboam 120 — Gestion du restaurant</title>
+  <link rel="stylesheet" href="assets/styles.css" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🍷</text></svg>" />
+</head>
+<body>
+  <button id="menuToggle" class="menu-toggle" aria-label="Menu">☰</button>
+
+  <aside class="sidebar" id="sidebar">
+    <div class="brand">
+      <span class="brand-logo">🍷</span>
+      <div>
+        <div class="brand-name">Jéroboam 120</div>
+        <div class="brand-sub">Gestion restaurant</div>
+      </div>
+    </div>
+    <nav class="nav" id="nav">
+      <a href="#/tableau-de-bord" data-view="tableau-de-bord"><span class="ico">📊</span> Tableau de bord</a>
+      <a href="#/stocks" data-view="stocks"><span class="ico">📦</span> Stocks <span class="nav-badge" id="badgeStocks"></span></a>
+      <a href="#/fournisseurs" data-view="fournisseurs"><span class="ico">🚚</span> Fournisseurs</a>
+      <a href="#/cave" data-view="cave"><span class="ico">🍾</span> Cave / Vins <span class="nav-badge" id="badgeCave"></span></a>
+      <a href="#/planning" data-view="planning"><span class="ico">🗓️</span> Planning équipe</a>
+      <a href="#/plats-du-jour" data-view="plats-du-jour"><span class="ico">🍽️</span> Plats du jour</a>
+      <a href="#/communication" data-view="communication"><span class="ico">💬</span> Salle ↔ Cuisine <span class="nav-badge" id="badgeComm"></span></a>
+      <a href="#/checklists" data-view="checklists"><span class="ico">✅</span> Checklists</a>
+      <a href="#/notes" data-view="notes"><span class="ico">📝</span> Notes & consignes</a>
+    </nav>
+    <div class="sidebar-foot">
+      <button id="exportBtn" class="btn-ghost btn-sm" title="Sauvegarder les données dans un fichier">⬇︎ Exporter</button>
+      <button id="importBtn" class="btn-ghost btn-sm" title="Restaurer depuis un fichier">⬆︎ Importer</button>
+      <input type="file" id="importFile" accept="application/json" hidden />
+    </div>
+  </aside>
+
+  <div class="backdrop" id="backdrop"></div>
+
+  <main class="main" id="view"></main>
+
+  <div class="modal-root" id="modalRoot"></div>
+  <div class="toast-root" id="toastRoot"></div>
+
+  <script src="assets/app.js"></script>
+</body>
+</html>
