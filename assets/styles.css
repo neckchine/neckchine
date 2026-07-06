@@ -87,9 +87,9 @@ button { font-family: inherit; }
 /* ---------- Barre de titre ---------- */
 .appbar {
   position: sticky; top: 0; z-index: 30;
-  height: var(--appbar-h);
+  height: calc(var(--appbar-h) + env(safe-area-inset-top, 0px));
   display: flex; align-items: center; gap: 8px;
-  padding: 0 8px;
+  padding: env(safe-area-inset-top, 0px) 8px 0;
   background: color-mix(in srgb, var(--paper) 88%, transparent);
   backdrop-filter: saturate(180%) blur(12px);
   -webkit-backdrop-filter: saturate(180%) blur(12px);
