@@ -86,7 +86,7 @@ function defaultBesoins() {
     soir: { actif: true, debut: '18:00', fin: '23:30', Cuisine: 2, Salle: 2, Bar: 1 },
   };
 }
-const MENU_CATS = ['Entrée', 'Plat', 'Suggestion', 'Dessert'];
+const MENU_CATS = ['Entrée', 'Plat', 'Dessert', 'Suggestion'];
 const catLabel = (c) => ({ 'Entrée': 'Entrées', 'Plat': 'Plats', 'Dessert': 'Desserts', 'Suggestion': 'Suggestions' }[c] || c);
 save(); // persiste immédiatement les données initialisées / migrées
 function save() {
@@ -206,7 +206,7 @@ function scrAccueil() {
     <div class="eyebrow" style="margin-top:20px">Menu du jour <a onclick="go('menu')">${menuJour.length ? 'Modifier' : 'Écrire'}</a></div>
     ${menuJour.length
       ? `<div class="card menu-card">${MENU_CATS.filter(c => menuJour.some(i => i.categorie === c)).map(cat => `
-          <div class="menu-cat">${catLabel(cat)}</div>
+          <div class="menu-cat${cat === 'Suggestion' ? ' menu-cat-sep' : ''}">${catLabel(cat)}</div>
           ${menuJour.filter(i => i.categorie === cat).map(i => menuLine(i)).join('')}`).join('')}</div>`
       : `<button class="row" onclick="go('menu')"><div class="r-ico">${I.menu}</div>
           <div class="r-main"><div class="r-title">Aucun menu pour aujourd'hui</div><div class="r-sub">Touchez pour l'écrire depuis la cuisine</div></div>
@@ -367,7 +367,7 @@ function scrMenu() {
     return `<div class="eyebrow" style="text-transform:capitalize">${frDateLong(day)}${day === todayISO() ? ' <span class="pill p-wine">Aujourd\'hui</span>' : ''}</div>
       <div class="card menu-card">
         ${MENU_CATS.filter(c => items.some(i => i.categorie === c)).map(cat => `
-          <div class="menu-cat">${catLabel(cat)}</div>
+          <div class="menu-cat${cat === 'Suggestion' ? ' menu-cat-sep' : ''}">${catLabel(cat)}</div>
           ${items.filter(i => i.categorie === cat).map(i => menuLine(i, true)).join('')}
         `).join('') || '<p class="muted" style="padding:12px 0">Menu vide — touchez + pour ajouter un plat.</p>'}
       </div>`;
