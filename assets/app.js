@@ -1259,6 +1259,33 @@ function cloudLogout() { window.Cloud.signOut(); gateDismissed = false; toast('V
 function notify(title, body) { if (window.Cloud && window.Cloud.pushSend) window.Cloud.pushSend(title, body); }
 async function enableNotifs() {
   if (!window.Cloud) return toast('Indisponible', 'err');
+  const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent || '');
+  const standalone = (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) || window.navigator.standalone === true;
+
+  if (!('Notification' in window) || !('serviceWorker' in navigator) || !('PushManager' in window)) {
+    return sheet('Notifications indisponibles', `<p class="muted" style="font-size:14px;line-height:1.6">${isIOS
+      ? (standalone
+        ? 'Ton iPhone doit être en <b>iOS 16.4 ou plus récent</b> (Réglages → Général → Informations → Version logicielle).'
+        : 'Ouvre l\'app depuis l\'icône de l\'<b>écran d\'accueil</b> (pas Safari).')
+      : 'Ce navigateur ne supporte pas les notifications.'}</p>`, null);
+  }
+
+  if (Notification.permission === 'denied') {
+    return sheet('Notifications bloquées', `<p class="muted" style="font-size:14px;line-height:1.7">Les notifications sont refusées pour l'app. Pour les réactiver :</p>
+      <ol style="padding-left:20px;line-height:2;font-size:14px">
+        ${isIOS
+          ? '<li>Réglages iPhone → descends jusqu\'à <b>Jéroboam 120</b></li><li><b>Notifications</b> → active <b>Autoriser les notifications</b></li><li>Si l\'app n\'y est pas : supprime l\'icône, réinstalle-la, puis réessaie.</li>'
+          : '<li>Ouvre les réglages du site (🔒 barre d\'adresse)</li><li>Autorise les notifications</li><li>Recharge et réessaie</li>'}
+      </ol>`, null);
+  }
+
+  if (Notification.permission === 'default') {
+    let perm = 'default';
+    try { perm = await Notification.requestPermission(); } catch (e) { perm = Notification.permission; }
+    if (perm !== 'granted') return toast('Autorisation non accordée', 'err');
+  }
+
+  if (!window.Cloud.isConnected || !window.Cloud.isConnected()) return toast('Connecte-toi avec le code 0708 d\'abord', 'err');
   toast('Activation…');
   const r = await window.Cloud.enablePush();
   if (r && r.ok) toast('Notifications activées 🔔', 'ok');
