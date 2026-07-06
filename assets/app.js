@@ -374,12 +374,43 @@ function scrMenu() {
   }).join('');
 }
 function menuLine(i, editable = false) {
+  const has = i.reste !== undefined && i.reste !== null && i.reste !== '';
+  const r = Number(i.reste);
+  const badge = has
+    ? `<span class="pill ${r <= 0 ? 'p-danger' : r <= 3 ? 'p-warn' : 'p-ok'}" ${editable ? `onclick="setReste('${i.id}')" style="cursor:pointer"` : ''}>${r <= 0 ? '⛔ épuisé' : 'reste ' + r}</span>`
+    : (editable ? `<button class="pill p-muted" style="border:none;cursor:pointer" onclick="setReste('${i.id}')">+ reste</button>` : '');
   return `<div class="menu-item">
-    <div class="mi-main"><div class="mi-name">${esc(i.nom)}</div>${i.description ? `<div class="mi-desc">${esc(i.description)}</div>` : ''}</div>
+    <div class="mi-main"><div class="mi-name">${esc(i.nom)} ${badge}</div>${i.description ? `<div class="mi-desc">${esc(i.description)}</div>` : ''}</div>
     ${i.prix ? `<span class="mi-price">${eur(i.prix)}</span>` : ''}
-    ${editable ? `<button class="icon-btn" onclick="editMenuLine('${i.id}')" aria-label="Modifier">${I.edit}</button>
+    ${editable ? `${has && r > 0 ? `<button class="icon-btn" onclick="decReste('${i.id}')" aria-label="Une portion en moins" style="font-weight:800">−1</button>` : ''}
+    <button class="icon-btn" onclick="editMenuLine('${i.id}')" aria-label="Modifier">${I.edit}</button>
     <button class="icon-btn" onclick="delItem('menus','${i.id}')" aria-label="Supprimer">${I.trash}</button>` : ''}
   </div>`;
+}
+function setReste(id) {
+  const m = DB.menus.find(x => x.id === id); if (!m) return;
+  const cur = (m.reste === undefined || m.reste === null || m.reste === '') ? '' : m.reste;
+  sheet(`Il reste — ${m.nom}`, `
+    ${fld('Portions restantes', `<input id="r_val" type="number" inputmode="numeric" min="0" value="${esc(cur)}" placeholder="Ex. 5">`)}
+    <div class="tag-row">
+      <button class="btn-sm btn-soft" onclick="quickReste('${id}',10)">10</button>
+      <button class="btn-sm btn-soft" onclick="quickReste('${id}',5)">5</button>
+      <button class="btn-sm btn-soft" onclick="quickReste('${id}',3)">3</button>
+      <button class="btn-sm btn-soft" onclick="quickReste('${id}',1)">1</button>
+      <button class="btn-sm btn" style="background:var(--red)" onclick="quickReste('${id}',0)">⛔ Épuisé (86)</button>
+      <button class="btn-sm btn-soft" onclick="quickReste('${id}',null)">Effacer</button>
+    </div>
+  `, () => {
+    const v = $('#r_val').value.trim();
+    applyReste(id, v === '' ? null : Math.max(0, +v));
+  });
+}
+function quickReste(id, v) { applyReste(id, v); closeSheet(); }
+function decReste(id) { const m = DB.menus.find(x => x.id === id); if (!m) return; const cur = Number(m.reste); if (isNaN(cur)) return setReste(id); applyReste(id, Math.max(0, cur - 1)); }
+function applyReste(id, v) {
+  const m = DB.menus.find(x => x.id === id); if (!m) return;
+  m.reste = v; save(); render();
+  if (v === 0) notify('⛔ 86 / épuisé', m.nom);
 }
 function editMenuLine(id) {
   const m = id ? DB.menus.find(x => x.id === id) : { nom: '', description: '', categorie: 'Plat', prix: 0, date: todayISO() };
@@ -389,10 +420,12 @@ function editMenuLine(id) {
     ${fld('Description (facultatif)', `<textarea id="m_desc" placeholder="Garniture, accompagnement…">${esc(m.description)}</textarea>`)}
     <div class="form-row">
       ${fld('Prix € (facultatif)', `<input id="m_prix" type="number" inputmode="decimal" min="0" step="0.5" value="${esc(m.prix)}">`)}
-      ${fld('Date', `<input id="m_date" type="date" value="${esc(m.date)}">`)}
+      ${fld('Reste (facultatif)', `<input id="m_reste" type="number" inputmode="numeric" min="0" value="${esc(m.reste ?? '')}" placeholder="portions">`)}
     </div>
+    ${fld('Date', `<input id="m_date" type="date" value="${esc(m.date)}">`)}
   `, () => {
-    const d = { categorie: $('#m_cat').value, nom: $('#m_nom').value.trim(), description: $('#m_desc').value.trim(), prix: +$('#m_prix').value, date: $('#m_date').value };
+    const rv = $('#m_reste').value.trim();
+    const d = { categorie: $('#m_cat').value, nom: $('#m_nom').value.trim(), description: $('#m_desc').value.trim(), prix: +$('#m_prix').value, date: $('#m_date').value, reste: rv === '' ? null : Math.max(0, +rv) };
     if (!d.nom) return toast('L\'intitulé est obligatoire', 'err'), false;
     if (id) Object.assign(m, d); else DB.menus.push({ id: uid(), ...d });
     save(); render(); toast('Menu mis à jour', 'ok');
@@ -1314,6 +1347,7 @@ window.__jero = {
 /* Exposition pour les onclick inline */
 Object.assign(window, {
   go, editStock, quickRestock, editVin, quickVin, editMenuLine,
+  setReste, quickReste, decReste,
   editFournisseur, addComm, toggleComm, setCheckTab, toggleCheck,
   setPlanningTab, planningWeekShift, planningToday, generatePlanning, addAssignment, removeAssignment,
   cellAdd, cellSvcChange, editStaff, setBesoin, setBesoinActif, planningAI,
