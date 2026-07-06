@@ -64,6 +64,7 @@ function normalize(db) {
   if (!db.besoins) db.besoins = defaultBesoins();
   if (!Array.isArray(db.planning)) db.planning = [];
   if (!Array.isArray(db.commandes)) db.commandes = [];
+  if (!Array.isArray(db.carte)) db.carte = [];
   // Ancien format de planning (sans « service ») -> on repart propre
   db.planning = db.planning.filter(p => p && p.service && p.employeId);
   return db;
@@ -124,6 +125,7 @@ function seed() {
     besoins: defaultBesoins(),
     planning: [],
     commandes: [],
+    carte: [],
     menus: [
       { id: 'd1', date: t, categorie: 'Entrée', nom: 'Velouté de potimarron', description: 'Crème légère & graines torréfiées', prix: 9 },
       { id: 'd2', date: t, categorie: 'Plat', nom: 'Suprême de volaille, jus au thym', description: 'Écrasé de pommes de terre à l\'huile d\'olive', prix: 19 },
@@ -387,28 +389,28 @@ function menuLine(i, editable = false) {
     <button class="icon-btn" onclick="delItem('menus','${i.id}')" aria-label="Supprimer">${I.trash}</button>` : ''}
   </div>`;
 }
-function setReste(id) {
-  const m = DB.menus.find(x => x.id === id); if (!m) return;
+function setReste(id, coll = 'menus') {
+  const m = DB[coll].find(x => x.id === id); if (!m) return;
   const cur = (m.reste === undefined || m.reste === null || m.reste === '') ? '' : m.reste;
   sheet(`Il reste — ${m.nom}`, `
     ${fld('Portions restantes', `<input id="r_val" type="number" inputmode="numeric" min="0" value="${esc(cur)}" placeholder="Ex. 5">`)}
     <div class="tag-row">
-      <button class="btn-sm btn-soft" onclick="quickReste('${id}',10)">10</button>
-      <button class="btn-sm btn-soft" onclick="quickReste('${id}',5)">5</button>
-      <button class="btn-sm btn-soft" onclick="quickReste('${id}',3)">3</button>
-      <button class="btn-sm btn-soft" onclick="quickReste('${id}',1)">1</button>
-      <button class="btn-sm btn" style="background:var(--red)" onclick="quickReste('${id}',0)">⛔ Épuisé (86)</button>
-      <button class="btn-sm btn-soft" onclick="quickReste('${id}',null)">Effacer</button>
+      <button class="btn-sm btn-soft" onclick="quickReste('${id}',10,'${coll}')">10</button>
+      <button class="btn-sm btn-soft" onclick="quickReste('${id}',5,'${coll}')">5</button>
+      <button class="btn-sm btn-soft" onclick="quickReste('${id}',3,'${coll}')">3</button>
+      <button class="btn-sm btn-soft" onclick="quickReste('${id}',1,'${coll}')">1</button>
+      <button class="btn-sm btn" style="background:var(--red)" onclick="quickReste('${id}',0,'${coll}')">⛔ Épuisé (86)</button>
+      <button class="btn-sm btn-soft" onclick="quickReste('${id}',null,'${coll}')">Effacer</button>
     </div>
   `, () => {
     const v = $('#r_val').value.trim();
-    applyReste(id, v === '' ? null : Math.max(0, +v));
+    applyReste(id, v === '' ? null : Math.max(0, +v), coll);
   });
 }
-function quickReste(id, v) { applyReste(id, v); closeSheet(); }
-function decReste(id) { const m = DB.menus.find(x => x.id === id); if (!m) return; const cur = Number(m.reste); if (isNaN(cur)) return setReste(id); applyReste(id, Math.max(0, cur - 1)); }
-function applyReste(id, v) {
-  const m = DB.menus.find(x => x.id === id); if (!m) return;
+function quickReste(id, v, coll = 'menus') { applyReste(id, v, coll); closeSheet(); }
+function decReste(id, coll = 'menus') { const m = DB[coll].find(x => x.id === id); if (!m) return; const cur = Number(m.reste); if (isNaN(cur)) return setReste(id, coll); applyReste(id, Math.max(0, cur - 1), coll); }
+function applyReste(id, v, coll = 'menus') {
+  const m = DB[coll].find(x => x.id === id); if (!m) return;
   m.reste = v; save(); render();
   if (v === 0) notify('⛔ 86 / épuisé', m.nom);
 }
@@ -433,11 +435,53 @@ function editMenuLine(id) {
   });
 }
 
+/* ---------- Carte fixe (plats permanents + reste) ---------- */
+const CARTE_SECTIONS = ['Entrée', 'Viande', 'Plat', 'Dessert'];
+const carteLabel = (s) => ({ 'Entrée': 'Entrées', 'Viande': 'L\'art de la viande', 'Plat': 'Plats', 'Dessert': 'Desserts' }[s] || s);
+function scrCarte() {
+  if (!DB.carte.length) return empty(I.menu, 'Carte vide', 'Touchez + pour ajouter un plat à la carte. La cuisine pourra y noter les portions restantes.');
+  return `<div class="card menu-card">
+    ${CARTE_SECTIONS.filter(s => DB.carte.some(d => d.section === s)).map(s => `
+      <div class="menu-cat">${carteLabel(s)}</div>
+      ${DB.carte.filter(d => d.section === s).map(d => carteLine(d)).join('')}
+    `).join('')}
+  </div>`;
+}
+function carteLine(d) {
+  const has = d.reste !== undefined && d.reste !== null && d.reste !== '';
+  const r = Number(d.reste);
+  const badge = has
+    ? `<span class="pill ${r <= 0 ? 'p-danger' : r <= 3 ? 'p-warn' : 'p-ok'}" onclick="setReste('${d.id}','carte')" style="cursor:pointer">${r <= 0 ? '⛔ épuisé' : 'reste ' + r}</span>`
+    : `<button class="pill p-muted" style="border:none;cursor:pointer" onclick="setReste('${d.id}','carte')">+ reste</button>`;
+  return `<div class="menu-item">
+    <div class="mi-main"><div class="mi-name">${esc(d.nom)} ${badge}</div>${d.description ? `<div class="mi-desc">${esc(d.description)}</div>` : ''}</div>
+    ${d.prix ? `<span class="mi-price">${eur(d.prix)}</span>` : ''}
+    ${has && r > 0 ? `<button class="icon-btn" onclick="decReste('${d.id}','carte')" aria-label="Une portion en moins" style="font-weight:800">−1</button>` : ''}
+    <button class="icon-btn" onclick="editCarteDish('${d.id}')">${I.edit}</button>
+    <button class="icon-btn" onclick="delItem('carte','${d.id}')">${I.trash}</button>
+  </div>`;
+}
+function editCarteDish(id) {
+  const d = id ? DB.carte.find(x => x.id === id) : { section: 'Plat', nom: '', description: '', prix: 0 };
+  sheet(id ? 'Modifier le plat' : 'Ajouter à la carte', `
+    ${fld('Section', `<select id="k_sec">${CARTE_SECTIONS.map(s => `<option ${s === d.section ? 'selected' : ''}>${s}</option>`).join('')}</select>`)}
+    ${fld('Intitulé du plat', `<input id="k_nom" value="${esc(d.nom)}" placeholder="Ex. Confit de canard">`)}
+    ${fld('Description (facultatif)', `<textarea id="k_desc" placeholder="Garniture…">${esc(d.description || '')}</textarea>`)}
+    ${fld('Prix € (facultatif)', `<input id="k_prix" type="number" inputmode="decimal" min="0" step="0.5" value="${esc(d.prix || 0)}">`)}
+  `, () => {
+    const data = { section: $('#k_sec').value, nom: $('#k_nom').value.trim(), description: $('#k_desc').value.trim(), prix: +$('#k_prix').value };
+    if (!data.nom) return toast('L\'intitulé est obligatoire', 'err'), false;
+    if (id) Object.assign(d, data); else DB.carte.push({ id: uid(), ...data });
+    save(); render(); toast('Carte mise à jour', 'ok');
+  });
+}
+
 /* ---------- Plus (menu) ---------- */
 function scrPlus() {
   const co = commOuverts().length;
   const menu = [
     { s: 'assistant', ic: I.chat, t: 'Assistant IA', d: 'Pose une question sur tes données' },
+    { s: 'carte', ic: I.menu, t: 'Carte', d: `${DB.carte.length} plat(s) · suivi des restes` },
     { s: 'communication', ic: I.chat, t: 'Salle ↔ Cuisine', d: 'Messages, signalements & 86', badge: co },
     { s: 'planning', ic: I.calendar, t: 'Planning équipe', d: 'Grille, dispos & génération' },
     { s: 'commandes', ic: I.box, t: 'À commander', d: `${DB.commandes.filter(c => !c.fait).length} produit(s) à commander` },
@@ -1129,7 +1173,7 @@ function filterList(q) {
 }
 
 function delItem(collection, id) {
-  const labels = { stocks: 'ce produit', fournisseurs: 'ce fournisseur', vins: 'cette référence', staff: 'cet employé', planning: 'ce service', menus: 'cette ligne', commandes: 'cette ligne', comm: 'ce message', notes: 'cette note' };
+  const labels = { stocks: 'ce produit', fournisseurs: 'ce fournisseur', vins: 'cette référence', staff: 'cet employé', planning: 'ce service', menus: 'cette ligne', carte: 'ce plat', commandes: 'cette ligne', comm: 'ce message', notes: 'cette note' };
   if (!confirm(`Supprimer ${labels[collection] || 'cet élément'} ?`)) return;
   DB[collection] = DB[collection].filter(x => x.id !== id); save(); render(); toast('Supprimé');
 }
@@ -1195,6 +1239,7 @@ const SCREENS = {
   scan:          { title: 'Scanner le ticket', tab: 'stocks', back: 'stocks', render: scrScan },
   cave:          { title: 'Cave / Vins', tab: 'cave', render: scrCave, fab: 'editVin' },
   menu:          { title: 'Menu du jour', tab: 'menu', render: scrMenu, fab: 'editMenuLine' },
+  carte:         { title: 'Carte', tab: 'plus', back: 'plus', render: scrCarte, fab: 'editCarteDish' },
   plus:          { title: 'Plus', tab: 'plus', render: scrPlus },
   communication: { title: 'Salle ↔ Cuisine', tab: 'plus', back: 'plus', render: scrCommunication },
   planning:      { title: 'Planning équipe', tab: 'plus', back: 'plus', render: scrPlanning },
@@ -1346,7 +1391,7 @@ window.__jero = {
 
 /* Exposition pour les onclick inline */
 Object.assign(window, {
-  go, editStock, quickRestock, editVin, quickVin, editMenuLine,
+  go, editStock, quickRestock, editVin, quickVin, editMenuLine, editCarteDish,
   setReste, quickReste, decReste,
   editFournisseur, addComm, toggleComm, setCheckTab, toggleCheck,
   setPlanningTab, planningWeekShift, planningToday, generatePlanning, addAssignment, removeAssignment,
