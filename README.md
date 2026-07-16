@@ -43,6 +43,58 @@ assets/styles.css   Feuille de styles
 assets/app.js       Logique de l'application (données, vues, modules)
 ```
 
+## 📱 Applications mobiles (App Store & Play Store)
+
+L'app est empaquetée avec **[Capacitor](https://capacitorjs.com/)** : la même
+base web tourne dans une vraie app native **iOS** et **Android**, publiable sur
+les stores. Le code web reste à la racine (l'app s'ouvre toujours dans un
+navigateur) ; `www/` en est une copie générée automatiquement.
+
+### Prérequis
+
+| | Android | iOS |
+|---|---|---|
+| Outil | Android Studio | Xcode (**Mac obligatoire**) + [CocoaPods](https://cocoapods.org/) |
+| Compte | Google Play — **25 $** une fois | Apple Developer — **99 $/an** |
+
+### Mise en route
+
+```bash
+npm install                 # dépendances Capacitor
+npm run build               # copie le web vers www/ puis « cap sync »
+```
+
+**Android :**
+```bash
+npm run open:android        # ouvre le projet dans Android Studio
+```
+Puis dans Android Studio : *Build → Generate Signed Bundle / APK* → `.aab` à
+téléverser sur la [Play Console](https://play.google.com/console).
+
+**iOS (sur Mac) :**
+```bash
+cd ios/App && pod install && cd ../..   # 1re fois : installe les pods
+npm run open:ios                        # ouvre le projet dans Xcode
+```
+Puis dans Xcode : régler *Signing & Team*, *Bundle Identifier*
+(`com.jeroboam120.app`), puis *Product → Archive* → *Distribute App* vers
+App Store Connect.
+
+### Après chaque modif du web
+
+```bash
+npm run build   # resynchronise www/ → android/ + ios/
+```
+
+### Icônes
+
+Générées par `node scripts/gen-icons.mjs` depuis `assets/icon-512.png` (logo 🍷
+sur fond bordeaux). Relancer ce script après avoir changé l'icône source.
+
+> ℹ️ Les notifications push utilisent aujourd'hui le service worker web (PWA).
+> Pour de vraies notifications natives en app, ajouter le plugin
+> `@capacitor/push-notifications` (évolution).
+
 ## Évolutions possibles
 
 - Synchronisation multi-postes via une base de données partagée (Supabase, Firebase…)

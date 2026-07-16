@@ -1,0 +1,13 @@
+{
+  "appId": "com.jeroboam120.app",
+  "appName": "Jéroboam 120",
+  "webDir": "www",
+  "backgroundColor": "#7b1e2b",
+  "ios": {
+    "contentInset": "always",
+    "backgroundColor": "#7b1e2b"
+  },
+  "android": {
+    "backgroundColor": "#7b1e2b"
+  }
+}

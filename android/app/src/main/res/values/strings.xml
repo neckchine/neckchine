@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Jéroboam 120</string>
+    <string name="title_activity_main">Jéroboam 120</string>
+    <string name="package_name">com.jeroboam120.app</string>
+    <string name="custom_url_scheme">com.jeroboam120.app</string>
+</resources>

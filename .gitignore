@@ -10,3 +10,14 @@ Thumbs.db
 # Divers
 node_modules/
 *.log
+
+# Capacitor / build
+node_modules/
+www/
+ios/App/Pods/
+ios/App/build/
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+.DS_Store
